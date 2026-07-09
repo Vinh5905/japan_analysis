@@ -1,0 +1,47 @@
+name: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}
+
+services:
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.4-slim-bookworm}
+    image: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python:local
+    container_name: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      PYTHONPATH: ${PYTHONPATH:-/app/src}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+      POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+      MINIO_ENDPOINT_URL: http://${MINIO_HOST:-minio}:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-raw,processed,artifacts}
+    ports:
+      - "${PYTHON_SERVICE_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - python_cache:/root/.cache
+    networks:
+      - shared_net
+    healthcheck:
+      test: ["CMD", "python-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  python_cache:
+    driver: local
+
+networks:
+  shared_net:
+    name: ${SHARED_NETWORK_NAME:-crawler_shared_net}
+    external: true

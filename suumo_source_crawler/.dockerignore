@@ -1,0 +1,40 @@
+.dockerignore
+.git/
+.gitignore
+
+# Local environment
+.env
+.env.*
+
+# Python cache and virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime artifacts
+data/
+logs/
+tmp/
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
