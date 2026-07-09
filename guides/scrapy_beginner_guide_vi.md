@@ -166,16 +166,16 @@ FEEDS = {
 
 Ý nghĩa nhanh:
 
-| Setting | Ý nghĩa |
-|---|---|
-| `BOT_NAME` | Tên bot/crawler |
-| `SPIDER_MODULES` | Scrapy tìm spider trong package nào |
-| `NEWSPIDER_MODULE` | Lệnh `genspider` tạo spider vào đâu |
-| `ROBOTSTXT_OBEY` | Có tuân thủ `robots.txt` không |
-| `DOWNLOAD_DELAY` | Nghỉ bao lâu giữa các request |
-| `CONCURRENT_REQUESTS_PER_DOMAIN` | Số request đồng thời tới mỗi domain |
-| `ITEM_PIPELINES` | Bật pipeline nào, chạy theo thứ tự nào |
-| `FEEDS` | Cấu hình xuất file tự động |
+| Setting                            | Ý nghĩa                                    |
+| ---------------------------------- | -------------------------------------------- |
+| `BOT_NAME`                       | Tên bot/crawler                             |
+| `SPIDER_MODULES`                 | Scrapy tìm spider trong package nào        |
+| `NEWSPIDER_MODULE`               | Lệnh`genspider` tạo spider vào đâu    |
+| `ROBOTSTXT_OBEY`                 | Có tuân thủ`robots.txt` không          |
+| `DOWNLOAD_DELAY`                 | Nghỉ bao lâu giữa các request            |
+| `CONCURRENT_REQUESTS_PER_DOMAIN` | Số request đồng thời tới mỗi domain    |
+| `ITEM_PIPELINES`                 | Bật pipeline nào, chạy theo thứ tự nào |
+| `FEEDS`                          | Cấu hình xuất file tự động             |
 
 ---
 
@@ -585,12 +585,12 @@ response.css("div.product .price::text").get()
 
 Ý nghĩa:
 
-| Selector | Ý nghĩa |
-|---|---|
-| `h1::text` | lấy text trong thẻ `h1` |
-| `a::attr(href)` | lấy thuộc tính `href` của thẻ `a` |
-| `div.product` | lấy các `div` có class `product` |
-| `.price::text` | lấy text của element class `price` |
+| Selector          | Ý nghĩa                                 |
+| ----------------- | ----------------------------------------- |
+| `h1::text`      | lấy text trong thẻ`h1`                |
+| `a::attr(href)` | lấy thuộc tính`href` của thẻ `a` |
+| `div.product`   | lấy các`div` có class `product`    |
+| `.price::text`  | lấy text của element class`price`     |
 
 ### 7.2. XPath hay dùng
 
@@ -1272,17 +1272,17 @@ itemadapter
 
 ## 23. Mapping Scrapy với tư duy Data Engineering
 
-| Scrapy | Data Engineering tương ứng |
-|---|---|
-| Spider | Extract job |
-| Request queue/Scheduler | Orchestration/queue mini |
-| Downloader | Source connector |
-| Item | Raw record/schema |
-| Pipeline | Transform/validate/load mini step |
-| Feed Export | Raw file landing |
-| SQLite/Postgres pipeline | Load to storage |
-| Stats/logs | Observability |
-| JOBDIR | Resume state cho crawl dài |
+| Scrapy                   | Data Engineering tương ứng     |
+| ------------------------ | --------------------------------- |
+| Spider                   | Extract job                       |
+| Request queue/Scheduler  | Orchestration/queue mini          |
+| Downloader               | Source connector                  |
+| Item                     | Raw record/schema                 |
+| Pipeline                 | Transform/validate/load mini step |
+| Feed Export              | Raw file landing                  |
+| SQLite/Postgres pipeline | Load to storage                   |
+| Stats/logs               | Observability                     |
+| JOBDIR                   | Resume state cho crawl dài       |
 
 Nếu làm production, bạn có thể xem một crawl run như một batch:
 
@@ -1505,4 +1505,3 @@ scrapy settings --get BOT_NAME
 - Scrapfly, “Web Scraping With Scrapy: The Complete Guide in 2026”, 10/04/2026: https://scrapfly.io/blog/posts/web-scraping-with-scrapy
 - GroupBWT, “Scrapy Framework for Large-Scale Web Scraping: Architecture and Best Practices”, 13/03/2026: https://groupbwt.com/blog/scrapy-tutorial/
 - Medium, “Scrapy Data Export & Storage: Save Your Data Like a Pro”, 2025/2026: https://medium.com/@mikram2015/scrapy-data-export-storage-save-your-data-like-a-pro-98bf6180b7c2
-

@@ -103,3 +103,11 @@ crawler-down: ## Stop the SUUMO crawler Python service
 .PHONY: crawler-logs
 crawler-logs: ## Follow SUUMO crawler logs
 	$(MAKE) -C suumo_source_crawler logs
+
+.PHONY: crawler-python3
+crawler-python3: ## Run local python3 in the SUUMO crawler folder, pass args="main/main.py" if needed
+	$(MAKE) -C suumo_source_crawler python3 $(args)
+
+.PHONY: crawler-python3-container
+crawler-python3-container: ## Run python in the SUUMO crawler container, pass args="main/main.py" if needed
+	$(MAKE) -C suumo_source_crawler python3-container workdir="$(workdir)" args="$(args)"

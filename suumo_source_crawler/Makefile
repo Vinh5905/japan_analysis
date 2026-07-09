@@ -2,6 +2,9 @@ SHELL := /bin/sh
 
 COMPOSE := docker compose
 ENV_FILE := ../.env
+PYTHON ?= python3
+PYTHON_ARGS := $(if $(args),$(args),$(filter-out python3 python3-container,$(MAKECMDGOALS)))
+CONTAINER_WORKDIR := $(if $(workdir),-w $(workdir),)
 export DOCKER_BUILDKIT ?= 1
 export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
@@ -20,6 +23,8 @@ help: ## Show available commands
 	@printf "  make up\n"
 	@printf "  make ps\n"
 	@printf "  make logs\n"
+	@printf "  make python3 main/main.py\n"
+	@printf "  make python3-container workdir=/app/crawler args=\"-m scrapy crawl suumo_links\"\n"
 	@printf "  make shell\n\n"
 
 .PHONY: config
@@ -77,6 +82,22 @@ shell: ## Open a shell in the python container
 .PHONY: python
 python: ## Open a Python REPL in the python container
 	$(COMPOSE) --env-file $(ENV_FILE) exec python python
+
+.PHONY: python3
+python3: ## Run local python3. Use args="..." for options like -m.
+	$(PYTHON) $(PYTHON_ARGS)
+
+.PHONY: python3-container
+python3-container: ## Run container python. Use args="..." for options like -m.
+	$(COMPOSE) --env-file $(ENV_FILE) exec $(CONTAINER_WORKDIR) python python $(PYTHON_ARGS)
+
+# Allow commands like `make python3 main/main.py` where the script path is treated as an argument.
+# Use args="..." when arguments start with "-", because make parses those as its own options.
+.PHONY: FORCE
+%: FORCE
+	@:
+
+FORCE:
 
 .PHONY: clean
 clean: ## Stop the Python crawler container and remove anonymous containers/networks, keep named volumes

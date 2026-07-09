@@ -15,7 +15,9 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `suumo_source_crawler/docker-compose.yml`: orchestration riêng cho Python service của crawler SUUMO, join vào shared network.
 - `suumo_source_crawler/Makefile`: shortcut riêng cho Python service của crawler SUUMO.
 - `suumo_source_crawler/Dockerfile`: Python runtime cố định theo image `python:3.12.4-slim-bookworm`, cài dependencies crawler/data cơ bản từ `requirements.txt`, dùng BuildKit cache mount cho `apt` và `pip`.
-- `suumo_source_crawler/requirements.txt`: bộ thư viện nền gồm HTTP client, parser, PostgreSQL client, S3 client, pandas, dotenv/settings và retry.
+- `suumo_source_crawler/requirements.txt`: bộ thư viện nền cho crawler gồm Scrapy, parser, HTTP client, dotenv, MinIO client, PostgreSQL client, SQLAlchemy và pandas.
+- `suumo_source_crawler/main/main.py`: script khởi tạo MinIO bucket/prefix cho crawler. Mặc định dùng bucket `suumo` và tạo các prefix `data/`, `page_source/`, `image/` nếu chưa tồn tại; không xóa hoặc ghi đè dữ liệu có sẵn.
+- `suumo_source_crawler/crawler/crawler/spiders/suumo_links.py`: Scrapy spider `suumo_links` dùng để crawl toàn bộ page kết quả SUUMO và ghi listing URLs vào `suumo_source_crawler/crawler/tmp/suumo_links.txt`. File output được truncate mỗi lần spider chạy để parser sau đọc link mới.
 - `suumo_source_crawler/docker/python/healthcheck.py`: healthcheck Python service bằng cách kiểm tra kết nối PostgreSQL và MinIO.
 
 ## Services
@@ -64,6 +66,8 @@ Các Makefile export `DOCKER_BUILDKIT=1` và `COMPOSE_DOCKER_CLI_BUILD=1`, nên 
 
 `make -C suumo_source_crawler up` và `up-d` chỉ start service bằng image đã build sẵn. Khi cần build lại rồi start, dùng `make -C suumo_source_crawler up-build` hoặc `up-build-d`.
 
+Khi đứng trong `suumo_source_crawler`, có thể chạy Python local bằng `make python3 <script>`, ví dụ `make python3 main/main.py`. Nếu muốn chạy bên trong container Python, dùng `make python3-container <script>`. Với argument bắt đầu bằng `-`, dùng biến `args`, ví dụ `make python3-container args="-m scrapy startproject crawler"` vì `make` sẽ tự parse `-m` như option của Makefile nếu viết trực tiếp. Với Scrapy project, chạy trong thư mục có `scrapy.cfg`, ví dụ `make python3-container workdir=/app/crawler args="-m scrapy crawl suumo_links"`.
+
 Sau khi chạy:
 
 - PostgreSQL: `localhost:5432`
@@ -75,6 +79,7 @@ Sau khi chạy:
 
 - Bắt buộc đọc và tuân theo `docs/git-commit-convention.md` khi viết commit message.
 - Bắt buộc đọc và tuân theo `docs/workflow.md` khi tạo branch, pull request description, hoặc hướng dẫn workflow cho contributor.
+- Khi viết hoặc sửa Python code, mỗi hàm cần có docstring/comment ngắn nói rõ hàm dùng để làm gì. Những điểm quan trọng, dễ gây hiểu nhầm, hoặc có rủi ro như không xóa/không ghi đè dữ liệu cũng phải có comment tại chỗ.
 - Không commit secret thật vào `.env`; file hiện tại chỉ là demo local.
 - Khi thêm crawler code SUUMO, ưu tiên đặt source dưới `suumo_source_crawler/src/` và mount sẵn qua volume `.:/app`.
 - Khi cần thêm table dùng chung hoặc bootstrap local, thêm migration/init SQL mới dưới `docker/postgres/init/`. Với production-like migration, nên bổ sung tool migration riêng.
