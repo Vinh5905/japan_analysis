@@ -1290,7 +1290,7 @@ Nếu làm production, bạn có thể xem một crawl run như một batch:
 crawl_runs
   -> crawl_tasks/request logs
   -> raw_snapshots/html
-  -> parsed_items
+  -> parser_records
   -> load_batches
 ```
 

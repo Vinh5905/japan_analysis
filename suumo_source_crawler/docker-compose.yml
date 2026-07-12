@@ -22,7 +22,9 @@ services:
       MINIO_ENDPOINT_URL: http://${MINIO_HOST:-minio}:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-raw,processed,artifacts}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
+      MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
+      MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
     ports:
       - "${PYTHON_SERVICE_PORT:-8000}:8000"
     volumes:

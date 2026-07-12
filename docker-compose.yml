@@ -61,7 +61,7 @@ services:
       MINIO_API_PORT: ${MINIO_API_PORT:-9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-raw,processed,artifacts}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
     volumes:
       - ./docker/minio/create-buckets.sh:/scripts/create-buckets.sh:ro
     networks:
