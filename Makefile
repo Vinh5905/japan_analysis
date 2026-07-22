@@ -17,8 +17,7 @@ help: ## Show available root commands
 	@printf "\nExamples:\n"
 	@printf "  make infra-up-d\n"
 	@printf "  make infra-ps\n"
-	@printf "  make infra-logs service=postgres\n"
-	@printf "  make crawler-up-d\n\n"
+	@printf "  make infra-logs service=postgres\n\n"
 
 .PHONY: infra-config
 infra-config: ## Validate and render the shared infrastructure compose config
@@ -71,43 +70,3 @@ infra-clean: ## Stop shared infrastructure and remove anonymous containers/netwo
 .PHONY: infra-clean-volumes
 infra-clean-volumes: ## Stop shared infrastructure and remove named volumes. This deletes local Postgres and MinIO data.
 	$(COMPOSE) --env-file $(ENV_FILE) down --volumes --remove-orphans
-
-.PHONY: crawler-config
-crawler-config: ## Validate the SUUMO crawler compose config
-	$(MAKE) -C suumo_source_crawler config
-
-.PHONY: crawler-build
-crawler-build: ## Build the SUUMO crawler Python image
-	$(MAKE) -C suumo_source_crawler build
-
-.PHONY: crawler-up
-crawler-up: ## Start the SUUMO crawler Python service in foreground using the existing image
-	$(MAKE) -C suumo_source_crawler up
-
-.PHONY: crawler-up-d
-crawler-up-d: ## Start the SUUMO crawler Python service in background using the existing image
-	$(MAKE) -C suumo_source_crawler up-d
-
-.PHONY: crawler-up-build
-crawler-up-build: ## Build then start the SUUMO crawler Python service in foreground
-	$(MAKE) -C suumo_source_crawler up-build
-
-.PHONY: crawler-up-build-d
-crawler-up-build-d: ## Build then start the SUUMO crawler Python service in background
-	$(MAKE) -C suumo_source_crawler up-build-d
-
-.PHONY: crawler-down
-crawler-down: ## Stop the SUUMO crawler Python service
-	$(MAKE) -C suumo_source_crawler down
-
-.PHONY: crawler-logs
-crawler-logs: ## Follow SUUMO crawler logs
-	$(MAKE) -C suumo_source_crawler logs
-
-.PHONY: crawler-python3
-crawler-python3: ## Run local python3 in the SUUMO crawler folder, pass args="main/main.py" if needed
-	$(MAKE) -C suumo_source_crawler python3 $(args)
-
-.PHONY: crawler-python3-container
-crawler-python3-container: ## Run python in the SUUMO crawler container, pass args="main/main.py" if needed
-	$(MAKE) -C suumo_source_crawler python3-container workdir="$(workdir)" args="$(args)"

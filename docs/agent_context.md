@@ -8,7 +8,7 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 ## Những gì đã thiết lập
 
 - `docker-compose.yml`: orchestration root cho hạ tầng dùng chung gồm `postgres`, `minio`, và `minio-init`.
-- `Makefile`: shortcut root cho hạ tầng dùng chung và một số target delegate sang crawler.
+- `Makefile`: shortcut root chỉ cho hạ tầng dùng chung. Các lệnh crawler nằm trong `suumo_source_crawler/Makefile`.
 - `.env`: file demo root có biến cấu hình chung cho PostgreSQL, MinIO, Docker network và biến runtime crawler. Dùng `CRAWLER_COMPOSE_PROJECT_NAME` cho crawler để không override compose project của hạ tầng root.
 - `docker/postgres/init/001_create_crawler_metadata.sql`: init fresh schema metadata crawler gồm `config`, `crawl_sources`, `crawl_runs`, `raw_snapshots`, `crawl_tasks`, `parser_records`, và `load_batches`. Schema hiện gom trực tiếp vào init cho database mới.
 - `docs/database-schema.md`: tài liệu schema hiện tại, mô tả từng bảng/cột/type, enum, quy tắc URL hash, data hash, và MinIO storage path.
@@ -51,7 +51,7 @@ MinIO UI chạy qua MinIO Console tại `http://localhost:9001`.
 
 ```bash
 make infra-up-d
-make crawler-up-d
+make -C suumo_source_crawler up-d
 ```
 
 Hoặc dùng Makefile:

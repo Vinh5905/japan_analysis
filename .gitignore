@@ -21,6 +21,7 @@ htmlcov/
 data/
 logs/
 tmp/
+vpn_config/
 *.log
 
 # OS and editor files

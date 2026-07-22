@@ -23,21 +23,39 @@ ADDONS = {}
 ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
-#CONCURRENT_REQUESTS = 16
+CONCURRENT_REQUESTS = 2
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
-DOWNLOAD_DELAY = 2
+DOWNLOAD_DELAY = 3
+
+# Keep SUUMO responses on the desktop HTML layout that current selectors parse.
+DEFAULT_REQUEST_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+}
+FAKE_USER_AGENT_BROWSERS = ["Chrome"]
+FAKE_USER_AGENT_OS = ["Windows", "Mac OS X", "Linux"]
+FAKE_USER_AGENT_PLATFORMS = ["desktop"]
+FAKE_USER_AGENT_MIN_VERSION = 120.0
+FAKE_USER_AGENT_FALLBACK = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36"
+)
+
+# Temporary detail-page parser check: read one URL from tmp by default.
+SUUMO_PAGE_LINKS_FILE = "tmp/suumo_links.txt"
+SUUMO_PAGE_LINK_LIMIT = 1
+
+# Temporary HTML landing demo: upload one detail page to MinIO by default.
+SUUMO_HTML_LINKS_FILE = "tmp/suumo_links.txt"
+SUUMO_HTML_LINK_LIMIT = 1
+SUUMO_HTML_RAW_SNAPSHOT_START_ID = 1
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
 
 # Disable Telnet Console (enabled by default)
 #TELNETCONSOLE_ENABLED = False
-
-# Override the default request headers:
-#DEFAULT_REQUEST_HEADERS = {
-#    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-#    "Accept-Language": "en",
-#}
 
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html

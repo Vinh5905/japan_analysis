@@ -13,10 +13,23 @@ from itemadapter import ItemAdapter
 class RandomUserAgentMiddleware:
     """Assign a random browser-like User-Agent to each outgoing request."""
 
-    def __init__(self, fallback_user_agent):
-        """Store the fake-useragent generator and fallback User-Agent string."""
+    def __init__(
+        self,
+        browsers,
+        operating_systems,
+        platforms,
+        min_version,
+        fallback_user_agent,
+    ):
+        """Store a configured fake-useragent generator and fallback User-Agent."""
 
-        self.user_agent = UserAgent()
+        self.user_agent = UserAgent(
+            browsers=browsers,
+            os=operating_systems,
+            platforms=platforms,
+            min_version=min_version,
+            fallback=fallback_user_agent,
+        )
         self.fallback_user_agent = fallback_user_agent
 
     @classmethod
@@ -28,10 +41,19 @@ class RandomUserAgentMiddleware:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         )
-        return cls(fallback_user_agent=fallback_user_agent)
+        return cls(
+            browsers=crawler.settings.getlist("FAKE_USER_AGENT_BROWSERS") or None,
+            operating_systems=crawler.settings.getlist("FAKE_USER_AGENT_OS") or None,
+            platforms=crawler.settings.getlist("FAKE_USER_AGENT_PLATFORMS") or None,
+            min_version=crawler.settings.getfloat("FAKE_USER_AGENT_MIN_VERSION", 0.0),
+            fallback_user_agent=fallback_user_agent,
+        )
 
-    def process_request(self, request, spider):
+    def process_request(self, request):
         """Set User-Agent on the request before Scrapy sends it."""
+
+        if request.headers.get("User-Agent"):
+            return None
 
         # If fake-useragent cannot provide a value, keep the crawler working with fallback.
         request.headers["User-Agent"] = self.get_user_agent()

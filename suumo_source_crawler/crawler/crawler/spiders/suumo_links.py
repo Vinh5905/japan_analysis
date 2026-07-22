@@ -38,14 +38,15 @@ class SuumoLinksSpider(scrapy.Spider):
 
     def open_spider(self, spider):
         """Reset the temporary output file before every spider run."""
-
+        self.logger.info("Resetting temporary output file %s", self.output_path)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         # This is intentionally overwritten on each run so parsers read fresh links only.
         self.output_path.write_text("", encoding="utf-8")
 
-    def start_requests(self):
+    async def start(self):
         """Fetch the first result page once to discover the total page count."""
 
+        self.logger.info("Starting SUUMO links spider with base URL: %s", self.base_url)
         yield scrapy.Request(
             self.build_page_url(1),
             callback=self.parse_page_count,
@@ -69,7 +70,6 @@ class SuumoLinksSpider(scrapy.Spider):
 
     def parse_page_count(self, response, page_number: int):
         """Read pagination, then enqueue every known listing page request."""
-
         last_page_number = self.extract_last_page_number(response)
         self.logger.info("Discovered %s SUUMO result pages", last_page_number)
 
