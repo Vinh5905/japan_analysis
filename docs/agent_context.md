@@ -10,7 +10,8 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `docker-compose.yml`: orchestration root cho hạ tầng dùng chung gồm `postgres`, `minio`, và `minio-init`.
 - `Makefile`: shortcut root chỉ cho hạ tầng dùng chung. Các lệnh crawler nằm trong `suumo_source_crawler/Makefile`.
 - `.env`: file demo root có biến cấu hình chung cho PostgreSQL, MinIO, Docker network và biến runtime crawler. Dùng `CRAWLER_COMPOSE_PROJECT_NAME` cho crawler để không override compose project của hạ tầng root.
-- `docker/postgres/init/001_create_crawler_metadata.sql`: init fresh schema metadata crawler gồm `config`, `crawl_sources`, `crawl_runs`, `raw_snapshots`, `crawl_tasks`, `parser_records`, và `load_batches`. Schema hiện gom trực tiếp vào init cho database mới.
+- `docker/postgres/init/001_create_crawler_metadata.sql`: init fresh schema metadata crawler gồm `config`, `crawl_sources`, `crawl_runs`, `raw_snapshots`, `crawl_tasks`, và `load_batches`. Parser records là JSON object trong batch file, không phải bảng DB. File này là schema mới nhất cho database bootstrap mới.
+- `docker/postgres/migrations/`: SQL migrations cho database đã tồn tại. Chạy một file bằng `make db-migrate file=<path>` hoặc chạy toàn bộ bằng `make db-migrate-all`. Hiện có migration seed SUUMO source với `robots_policy = 'allowed'` và `notes = NULL`, migration để `crawl_tasks` quản lý raw snapshot, migration xóa `crawl_runs.status`/`started_at`, migration scope `url_hash` theo run, và migration thay `parser_records` table bằng `crawl_tasks.batch_id -> load_batches`.
 - `docs/database-schema.md`: tài liệu schema hiện tại, mô tả từng bảng/cột/type, enum, quy tắc URL hash, data hash, và MinIO storage path.
 - `docker/minio/create-buckets.sh`: tạo sẵn bucket MinIO từ biến `MINIO_DEFAULT_BUCKETS`.
 - `suumo_source_crawler/docker-compose.yml`: orchestration riêng cho Python service của crawler SUUMO, join vào shared network.
@@ -18,8 +19,10 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `suumo_source_crawler/Dockerfile`: Python runtime cố định theo image `python:3.12.4-slim-bookworm`, cài dependencies crawler/data cơ bản từ `requirements.txt`, dùng BuildKit cache mount cho `apt` và `pip`.
 - `suumo_source_crawler/requirements.txt`: bộ thư viện nền cho crawler gồm Scrapy, parser, HTTP client, dotenv, MinIO client, PostgreSQL client, SQLAlchemy và pandas.
 - `suumo_source_crawler/main/main.py`: script khởi tạo MinIO bucket/prefix cho crawler. Mặc định dùng bucket `suumo` và tạo các prefix `data/`, `page_source/`, `image/` nếu chưa tồn tại; không xóa hoặc ghi đè dữ liệu có sẵn.
-- `suumo_source_crawler/crawler/crawler/storage.py`: helper chuẩn hóa URL task, tạo SHA-256 hash, build MinIO path theo format `suumo/{prefix}/{datetime}/{run_id}/{id}.{ext}`, gzip payload trước khi upload, và tính `data_hash` từ `image_public_url` cộng các field tiếng Nhật của SUUMO.
-- `suumo_source_crawler/crawler/crawler/spiders/suumo_links.py`: Scrapy spider `suumo_links` dùng để crawl toàn bộ page kết quả SUUMO và ghi listing URLs vào `suumo_source_crawler/crawler/tmp/suumo_links.txt`. File output được truncate mỗi lần spider chạy để parser sau đọc link mới.
+- `suumo_source_crawler/crawler/crawler/storage.py`: helper chuẩn hóa URL task, tạo SHA-256 hash, build MinIO path page/image theo format `suumo/{prefix}/{date}/{run_id}/{id}.{ext}` và data batch theo `suumo/data/{timestamp}.json.gz`, gzip payload trước khi upload, và tính `data_hash` từ `image_public_url` cộng các field tiếng Nhật của SUUMO.
+- `suumo_source_crawler/crawler/crawler/spiders/suumo_links.py`: Scrapy spider `suumo_links` dùng để crawl toàn bộ page kết quả SUUMO và ghi listing URLs vào `suumo_source_crawler/crawler/tmp/suumo_links.txt`. File output được truncate mỗi lần spider chạy; trước khi ghi link, spider hash URL rồi bỏ qua URL đã có trong `crawl_tasks.url_hash`.
+- `suumo_source_crawler/crawler/crawler/spiders/suumo_html.py`: Scrapy spider `suumo_html` đọc tmp links mới, tạo `crawl_runs` khi mở spider, claim một `crawl_tasks` row qua downloader middleware khi request thật sự bắt đầu, upload HTML gzip lên MinIO, ghi `raw_snapshots`, update task sang `pending` hoặc `failed`, tăng `crawl_runs.total_urls` khi task ra kết quả, finalize task đang dở thành `failed` khi spider đóng, và ghi `finished_at`. Trong một run, cùng `url_hash` chỉ có một task.
+- `suumo_source_crawler/crawler/crawler/spiders/suumo_page.py`: Scrapy spider `suumo_page` đọc `crawl_tasks.status = 'pending'` và `batch_id IS NULL`, tải raw HTML từ MinIO, parse thành JSON parser record đủ key/null, buffer mặc định 100 record hoặc 300 giây, upload JSON array gzip lên `suumo/data`, tạo `load_batches`, rồi update các task sang batch đó.
 - `suumo_source_crawler/docker/python/healthcheck.py`: healthcheck Python service bằng cách kiểm tra kết nối PostgreSQL và MinIO.
 
 ## Services
@@ -84,7 +87,7 @@ Sau khi chạy:
 - Khi viết hoặc sửa Python code, mỗi hàm cần có docstring/comment ngắn nói rõ hàm dùng để làm gì. Những điểm quan trọng, dễ gây hiểu nhầm, hoặc có rủi ro như không xóa/không ghi đè dữ liệu cũng phải có comment tại chỗ.
 - Không commit secret thật vào `.env`; file hiện tại chỉ là demo local.
 - Khi thêm crawler code SUUMO, ưu tiên đặt source dưới `suumo_source_crawler/src/` và mount sẵn qua volume `.:/app`.
-- Khi cần hiểu hoặc chỉnh schema database, đọc `docs/database-schema.md` trước. Schema hiện được gom vào init để bootstrap database mới.
+- Khi cần hiểu hoặc chỉnh schema database, đọc `docs/database-schema.md` trước. Cập nhật cả init SQL cho database mới và thêm SQL migration cho database đã tồn tại.
 - Khi cần thêm bucket MinIO, cập nhật `MINIO_DEFAULT_BUCKETS` trong `.env`.
 - File này là tài liệu context sống. Sau mỗi yêu cầu hoàn tất, cập nhật lại phần liên quan để agent sau nắm trạng thái mới nhất.
 

@@ -4,6 +4,7 @@
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 from scrapy import signals
+from scrapy.exceptions import IgnoreRequest
 from fake_useragent import UserAgent
 
 # useful for handling different item types with a single interface
@@ -66,6 +67,27 @@ class RandomUserAgentMiddleware:
             return self.user_agent.random
         except Exception:
             return self.fallback_user_agent
+
+
+class SuumoHtmlTaskClaimMiddleware:
+    """Create crawl_tasks rows only when suumo_html starts downloading a URL."""
+
+    def process_request(self, request, spider):
+        """Claim one crawl task for the active downloader request."""
+
+        if getattr(spider, "name", "") != "suumo_html":
+            return None
+
+        if request.cb_kwargs.get("task_id") is not None:
+            return None
+
+        task_id = spider.claim_task_for_request(request)
+        if task_id is None:
+            spider.logger.info("Skipping duplicate task in current run: %s", request.url)
+            raise IgnoreRequest(f"Task already exists in current run: {request.url}")
+
+        request.cb_kwargs["task_id"] = task_id
+        return None
 
 
 class CrawlerSpiderMiddleware:

@@ -2,6 +2,7 @@ SHELL := /bin/sh
 
 COMPOSE := docker compose
 ENV_FILE := .env
+MIGRATIONS_DIR := docker/postgres/migrations
 export DOCKER_BUILDKIT ?= 1
 export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
@@ -17,7 +18,8 @@ help: ## Show available root commands
 	@printf "\nExamples:\n"
 	@printf "  make infra-up-d\n"
 	@printf "  make infra-ps\n"
-	@printf "  make infra-logs service=postgres\n\n"
+	@printf "  make infra-logs service=postgres\n"
+	@printf "  make db-migrate-all\n\n"
 
 .PHONY: infra-config
 infra-config: ## Validate and render the shared infrastructure compose config
@@ -54,6 +56,21 @@ infra-logs: ## Follow shared infrastructure logs, optionally pass service=postgr
 .PHONY: psql
 psql: ## Open psql using credentials from .env inside the shared postgres container
 	$(COMPOSE) --env-file $(ENV_FILE) exec postgres sh -lc 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+
+.PHONY: db-migrate
+db-migrate: ## Run one SQL migration, pass file=docker/postgres/migrations/name.sql
+	@test -n "$(file)" || { printf "Usage: make db-migrate file=docker/postgres/migrations/001_drop_crawl_runs_derived_counts.sql\n"; exit 1; }
+	$(COMPOSE) --env-file $(ENV_FILE) exec -T postgres sh -lc 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1' < $(file)
+
+.PHONY: db-migrate-all
+db-migrate-all: ## Run all SQL migrations under docker/postgres/migrations in filename order
+	@set -eu; \
+	files=$$(find "$(MIGRATIONS_DIR)" -maxdepth 1 -type f -name '*.sql' | sort); \
+	if [ -z "$$files" ]; then printf "No SQL migrations found in %s\n" "$(MIGRATIONS_DIR)"; exit 0; fi; \
+	for migration in $$files; do \
+		printf "\nRunning migration: %s\n" "$$migration"; \
+		$(COMPOSE) --env-file $(ENV_FILE) exec -T postgres sh -lc 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1' < "$$migration"; \
+	done
 
 .PHONY: minio-shell
 minio-shell: ## Open a shell in the shared MinIO container

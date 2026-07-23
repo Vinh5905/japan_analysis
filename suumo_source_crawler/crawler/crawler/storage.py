@@ -26,11 +26,13 @@ CONTENT_TYPE_EXTENSIONS = {
 
 SUUMO_DATA_HASH_FIELDS = (
     "image_public_url",
+    "家賃",
     "敷金",
-    "管理費・共益費",
+    "管理費_共益費",
     "礼金",
     "保証金",
-    "敷引・償却",
+    "敷引_償却",
+    "電話番号",
     "所在地",
     "駅徒歩",
     "間取り",
@@ -74,13 +76,14 @@ class StorageTarget:
 
 @dataclass(frozen=True)
 class StoredObject:
-    """Return metadata needed by raw_snapshots, parser_records, or load_batches."""
+    """Return metadata needed by raw_snapshots or load_batches."""
 
     target: StorageTarget
     content_length: int
     content_hash: str
     compression: str | None
     stored_length: int
+    stored_hash: str
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -113,15 +116,26 @@ def task_url_hash(url: str, base_url: str = "https://suumo.jp") -> str:
     return sha256_text(normalize_task_url(url, base_url=base_url))
 
 
-def utc_path_datetime(value: datetime | None = None) -> str:
-    """Format the datetime segment used in MinIO object paths."""
+def utc_path_date(value: datetime | None = None) -> str:
+    """Format the UTC date segment used in MinIO object paths."""
 
     if value is None:
         value = datetime.now(timezone.utc)
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
 
-    return value.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return value.astimezone(timezone.utc).strftime("%Y%m%d")
+
+
+def utc_path_timestamp(value: datetime | None = None) -> str:
+    """Format a high precision UTC timestamp segment for batch object paths."""
+
+    if value is None:
+        value = datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
 def extension_for_content_type(content_type: str) -> str:
@@ -143,7 +157,7 @@ def build_storage_target(
     bucket_name: str = DEFAULT_BUCKET,
     compression: str | None = DEFAULT_COMPRESSION,
 ) -> StorageTarget:
-    """Build paths like suumo/page_source/{datetime}/{run_id}/{id}.html.gz."""
+    """Build paths like suumo/page_source/{date}/{run_id}/{id}.html.gz."""
 
     normalized_extension = extension if extension.startswith(".") else f".{extension}"
     file_name = f"{object_id}{normalized_extension}"
@@ -153,7 +167,7 @@ def build_storage_target(
     object_name = str(
         PurePosixPath(
             prefix.strip("/"),
-            utc_path_datetime(created_at),
+            utc_path_date(created_at),
             str(run_id),
             file_name,
         )
@@ -186,6 +200,7 @@ def upload_bytes(
     """Upload bytes to MinIO and return DB-ready hash, length, and path metadata."""
 
     compressed_payload = compress_payload(payload, compression=compression)
+    stored_hash = sha256_bytes(compressed_payload)
     client.put_object(
         target.bucket_name,
         target.object_name,
@@ -199,6 +214,7 @@ def upload_bytes(
         content_hash=sha256_bytes(payload),
         compression=compression,
         stored_length=len(compressed_payload),
+        stored_hash=stored_hash,
     )
 
 
@@ -226,21 +242,47 @@ def build_raw_snapshot_target(
 def build_image_target(
     created_at: datetime,
     run_id: int,
-    record_id: int,
+    task_id: int,
     extension: str,
     bucket_name: str = DEFAULT_BUCKET,
     compression: str | None = None,
 ) -> StorageTarget:
-    """Build the MinIO path for parser_records.image_storage_path."""
+    """Build the MinIO path for parser record image_storage_path."""
 
     return build_storage_target(
         prefix=IMAGE_PREFIX,
         created_at=created_at,
         run_id=run_id,
-        object_id=record_id,
+        object_id=task_id,
         extension=extension,
         bucket_name=bucket_name,
         compression=compression,
+    )
+
+
+def build_batch_target(
+    created_at: datetime,
+    extension: str = ".json",
+    bucket_name: str = DEFAULT_BUCKET,
+    compression: str | None = DEFAULT_COMPRESSION,
+) -> StorageTarget:
+    """Build paths like suumo/data/{timestamp}.json.gz."""
+
+    normalized_extension = extension if extension.startswith(".") else f".{extension}"
+    file_name = f"{utc_path_timestamp(created_at)}{normalized_extension}"
+    if compression == "gzip":
+        file_name = f"{file_name}.gz"
+
+    object_name = str(
+        PurePosixPath(
+            DATA_PREFIX,
+            file_name,
+        )
+    )
+    return StorageTarget(
+        bucket_name=bucket_name,
+        object_name=object_name,
+        storage_path=f"{bucket_name}/{object_name}",
     )
 
 

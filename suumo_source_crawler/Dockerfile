@@ -12,7 +12,7 @@ RUN --mount=type=cache,id=suumo-source-crawler-apt-cache,target=/var/cache/apt,s
     --mount=type=cache,id=suumo-source-crawler-apt-lib,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
     && apt-get update \
-    && apt-get install -y --no-install-recommends curl netcat-openbsd
+    && apt-get install -y --no-install-recommends curl libpq5 netcat-openbsd
 
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,id=suumo-source-crawler-pip,target=/root/.cache/pip \

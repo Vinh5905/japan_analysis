@@ -2,13 +2,38 @@ from __future__ import annotations
 
 import gzip
 import json
-from pathlib import Path
-from urllib.parse import urlparse
+from datetime import datetime, timedelta, timezone
 
 import scrapy
+from scrapy import signals
 from scrapy.http import TextResponse
 
-from crawler.object_storage import create_minio_client, split_storage_path
+from crawler.metadata_db import CrawlerMetadataRepository, PendingParseTask
+from crawler.object_storage import create_minio_client, load_minio_config, split_storage_path
+from crawler.storage import (
+    SUUMO_DATA_HASH_FIELDS,
+    build_batch_target,
+    suumo_data_hash,
+    upload_bytes,
+)
+
+
+SUUMO_SOURCE_FIELD_NAMES = tuple(
+    field_name
+    for field_name in SUUMO_DATA_HASH_FIELDS
+    if field_name != "image_public_url"
+)
+PARSER_RECORD_FIELD_NAMES = (
+    "task_id",
+    "image_public_url",
+    "image_storage_path",
+    *SUUMO_SOURCE_FIELD_NAMES,
+    "data_hash",
+    "parsed_at",
+    "is_valid",
+    "error_type",
+    "error_message",
+)
 
 
 def safe_extract(selector) -> str:
@@ -18,94 +43,139 @@ def safe_extract(selector) -> str:
     return text.strip().replace("\t", "") if text else ""
 
 
+def null_if_empty(value: object | None) -> object | None:
+    """Convert empty strings to JSON null while preserving non-string values."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized_value = value.strip()
+        return normalized_value or None
+
+    return value
+
+
 class SuumoPageSpider(scrapy.Spider):
-    """Extract one or more SUUMO detail pages from the temporary link file."""
+    """Parse pending SUUMO raw snapshots into compressed JSON load batches."""
 
     name = "suumo_page"
     allowed_domains = ["suumo.jp"]
 
     def __init__(self, *args, **kwargs):
-        """Initialize settings-backed defaults for local parser checks."""
+        """Initialize settings-backed parser batch state."""
 
         super().__init__(*args, **kwargs)
-        self.links_file_path = Path("tmp/suumo_links.txt")
-        self.link_limit = 1
-        self.storage_path = ""
-        self.storage_source_url = ""
-        self.minio_client = create_minio_client()
+        self.task_limit = 0
+        self.batch_size = 100
+        self.batch_seconds = 300
+        self.source_id = 1
+        self.source_base_url = "https://suumo.jp"
+        self.batch_records: list[dict[str, object | None]] = []
+        self.batch_started_at: datetime | None = None
+        self.metadata_repository: CrawlerMetadataRepository | None = None
+        self.minio_config = load_minio_config()
+        self.minio_client = create_minio_client(self.minio_config)
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
-        """Create the spider and load tmp file settings from Scrapy settings."""
+        """Create the spider and load parser batch settings."""
 
         spider = super().from_crawler(crawler, *args, **kwargs)
-        spider.links_file_path = Path(
-            crawler.settings.get("SUUMO_PAGE_LINKS_FILE", "tmp/suumo_links.txt")
-        )
-        spider.link_limit = crawler.settings.getint("SUUMO_PAGE_LINK_LIMIT", 1)
-        spider.storage_path = crawler.settings.get("SUUMO_PAGE_STORAGE_PATH", "")
-        spider.storage_source_url = crawler.settings.get("SUUMO_PAGE_SOURCE_URL", "")
+        spider.task_limit = crawler.settings.getint("SUUMO_PAGE_TASK_LIMIT", 0)
+        spider.batch_size = crawler.settings.getint("SUUMO_PAGE_BATCH_SIZE", 100)
+        spider.batch_seconds = crawler.settings.getint("SUUMO_PAGE_BATCH_SECONDS", 300)
+        spider.source_id = crawler.settings.getint("SUUMO_SOURCE_ID", 1)
+        spider.source_base_url = crawler.settings.get("SUUMO_SOURCE_BASE_URL", "https://suumo.jp")
+        crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
+        crawler.signals.connect(spider.close_spider, signal=signals.spider_closed)
         return spider
 
+    def open_spider(self, spider):
+        """Open DB resources used by parser batch persistence."""
+
+        self.metadata_repository = CrawlerMetadataRepository.from_env()
+        self.ensure_bucket()
+
+    def close_spider(self, spider, reason):
+        """Flush any buffered records before closing DB resources."""
+
+        try:
+            if self.batch_records:
+                self.logger.info(
+                    "Flushing %s buffered parser records before close: %s",
+                    len(self.batch_records),
+                    reason,
+                )
+                self.flush_batch(reason=f"spider_closed:{reason}")
+        except Exception:
+            self.logger.exception("Failed to flush buffered parser records on close")
+        finally:
+            if self.metadata_repository is not None:
+                self.metadata_repository.close()
+                self.metadata_repository = None
+
     async def start(self):
-        """Read links from tmp and schedule only the configured number of pages."""
+        """Read pending crawl tasks from DB and persist parser records in batches."""
 
-        if self.storage_path:
-            self.logger.info("Loading SUUMO page HTML from MinIO path %s", self.storage_path)
-            response = self.build_response_from_storage_path(self.storage_path)
-            for result in self.parse_page(response):
-                yield result
+        metadata_repository = self.require_metadata_repository()
+        pending_tasks = metadata_repository.fetch_pending_parse_tasks(
+            limit=self.task_limit,
+        )
+        if not pending_tasks:
+            self.logger.warning("No pending SUUMO crawl_tasks found for parser batching")
             return
 
-        links = self.read_links()
-        if not links:
-            self.logger.warning("No SUUMO links found in %s", self.links_file_path)
-            return
-
-        selected_links = links[: self.link_limit]
         self.logger.info(
-            "Starting SUUMO page extraction for %s/%s links from %s",
-            len(selected_links),
-            len(links),
-            self.links_file_path,
+            "Starting SUUMO parser batching for %s pending tasks",
+            len(pending_tasks),
         )
 
-        for url in selected_links:
-            yield scrapy.Request(url, callback=self.parse_page)
+        for task in pending_tasks:
+            parser_record = self.parse_task_record(task)
+            self.append_parser_record(parser_record)
 
-    def read_links(self) -> list[str]:
-        """Read non-empty SUUMO detail URLs from the temporary links file."""
+            if self.should_flush_batch():
+                summary = self.flush_batch(reason="threshold")
+                print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+                yield summary
 
-        if not self.links_file_path.exists():
-            return []
+        if self.batch_records:
+            summary = self.flush_batch(reason="finished")
+            print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+            yield summary
 
-        links = []
-        seen_links = set()
-        for raw_line in self.links_file_path.read_text(encoding="utf-8").splitlines():
-            link = raw_line.strip()
-            if not link or link in seen_links:
-                continue
-            links.append(link)
-            seen_links.add(link)
+    def ensure_bucket(self) -> None:
+        """Create the configured MinIO bucket if local bootstrap has not done it."""
 
-        return links
+        if not self.minio_client.bucket_exists(self.minio_config.bucket_name):
+            self.minio_client.make_bucket(self.minio_config.bucket_name)
 
-    def parse_page(self, response):
-        """Extract SUUMO detail fields and print them as JSON for manual checking."""
+    def parse_task_record(self, task: PendingParseTask) -> dict[str, object | None]:
+        """Load one raw snapshot and return a complete parser record JSON object."""
 
-        self.logger.debug(
-            "SUUMO page response status=%s url=%s price_nodes=%s property_tables=%s data_tables=%s",
-            response.status,
-            response.url,
-            len(response.css(".property_view_note-emphasis")),
-            len(response.css("table.property_view_table")),
-            len(response.css("table.data_table")),
-        )
-        data = self.extract_page_data(response)
-        print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
-        yield data
+        try:
+            response = self.build_response_from_storage_path(
+                storage_path=task.storage_path,
+                response_url=self.absolute_task_url(task.task_url),
+            )
+            extracted_data = self.extract_page_data(response)
+            return self.build_parser_record(
+                task_id=task.task_id,
+                extracted_data=extracted_data,
+            )
+        except Exception as exc:
+            self.logger.exception("Failed to parse task_id=%s", task.task_id)
+            return self.build_error_record(
+                task_id=task.task_id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
 
-    def build_response_from_storage_path(self, storage_path: str) -> TextResponse:
+    def build_response_from_storage_path(
+        self,
+        storage_path: str,
+        response_url: str,
+    ) -> TextResponse:
         """Load a gzip HTML object from MinIO and wrap it as a Scrapy response."""
 
         bucket_name, object_name = split_storage_path(storage_path)
@@ -119,7 +189,6 @@ class SuumoPageSpider(scrapy.Spider):
         if object_name.endswith(".gz"):
             payload = gzip.decompress(payload)
 
-        response_url = self.storage_source_url or storage_path
         return TextResponse(
             url=response_url,
             body=payload,
@@ -131,8 +200,6 @@ class SuumoPageSpider(scrapy.Spider):
 
         data: dict[str, str] = {}
 
-        data.update({"id": self.extract_response_id(response)})
-
         renting_price = safe_extract(response.css(".property_view_note-emphasis"))
         others_price_container = response.css(
             ".property_view_note-list span:not([class]), "
@@ -142,24 +209,166 @@ class SuumoPageSpider(scrapy.Spider):
             safe_extract(price).replace("\xa0", "")
             for price in others_price_container
         )
-        price_data = {
-            "家賃": renting_price,
-            **others_price_data,
-        }
-        data.update(price_data)
+        data.update(
+            {
+                "家賃": renting_price,
+                **others_price_data,
+            }
+        )
 
         phone_number = safe_extract(response.css(".viewform_advance_shop-cal-number"))
         data.update({"電話番号": phone_number})
 
         building_info_container = response.css("table.property_view_table")
-        building_info_data = self.extract_table_data(building_info_container)
-        data.update(building_info_data)
+        data.update(self.extract_table_data(building_info_container))
 
         room_info_container = response.css("table.data_table")
-        room_info_data = self.extract_table_data(room_info_container)
-        data.update(room_info_data)
+        data.update(self.extract_table_data(room_info_container))
 
         return data
+
+    def build_parser_record(
+        self,
+        task_id: int,
+        extracted_data: dict[str, str],
+    ) -> dict[str, object | None]:
+        """Build a fixed-shape JSON parser record from extracted page data."""
+
+        record = self.empty_parser_record(task_id=task_id)
+        for key, value in extracted_data.items():
+            if key in record:
+                record[key] = null_if_empty(value)
+            else:
+                self.logger.debug("Ignoring extracted SUUMO field outside schema: %s", key)
+
+        is_valid, error_type, error_message = self.validate_parser_record(record)
+        record["is_valid"] = is_valid
+        record["error_type"] = error_type
+        record["error_message"] = error_message
+        if is_valid:
+            record["data_hash"] = suumo_data_hash(record)
+
+        return record
+
+    def build_error_record(
+        self,
+        task_id: int,
+        error_type: str,
+        error_message: str,
+    ) -> dict[str, object | None]:
+        """Build a fixed-shape parser record for parse/runtime failures."""
+
+        record = self.empty_parser_record(task_id=task_id)
+        record["is_valid"] = False
+        record["error_type"] = error_type
+        record["error_message"] = error_message[:4000]
+        return record
+
+    def empty_parser_record(self, task_id: int) -> dict[str, object | None]:
+        """Return a parser record with every schema key present."""
+
+        record = {field_name: None for field_name in PARSER_RECORD_FIELD_NAMES}
+        record["task_id"] = task_id
+        record["parsed_at"] = datetime.now(timezone.utc).isoformat()
+        record["is_valid"] = False
+        return record
+
+    def validate_parser_record(
+        self,
+        record: dict[str, object | None],
+    ) -> tuple[bool, str | None, str | None]:
+        """Validate the minimum fields needed before loader receives a record."""
+
+        extracted_source_values = [
+            record.get(field_name)
+            for field_name in SUUMO_SOURCE_FIELD_NAMES
+        ]
+        if not any(extracted_source_values):
+            return False, "ValidationError", "No SUUMO detail fields extracted"
+
+        return True, None, None
+
+    def append_parser_record(self, parser_record: dict[str, object | None]) -> None:
+        """Add one parser record to the in-memory batch buffer."""
+
+        if not self.batch_records:
+            self.batch_started_at = datetime.now(timezone.utc)
+
+        self.batch_records.append(parser_record)
+
+    def should_flush_batch(self) -> bool:
+        """Return true when the buffer exceeds size or age thresholds."""
+
+        if not self.batch_records:
+            return False
+        if len(self.batch_records) >= self.batch_size:
+            return True
+        if self.batch_started_at is None:
+            return False
+
+        elapsed = datetime.now(timezone.utc) - self.batch_started_at
+        return elapsed >= timedelta(seconds=self.batch_seconds)
+
+    def flush_batch(self, reason: str) -> dict[str, object]:
+        """Upload the buffered parser record array and persist load_batches."""
+
+        if not self.batch_records:
+            raise ValueError("No parser records are buffered")
+
+        metadata_repository = self.require_metadata_repository()
+        records = list(self.batch_records)
+        task_ids = [int(record["task_id"]) for record in records if record["task_id"] is not None]
+        if not task_ids:
+            raise ValueError("Buffered parser records do not contain task_id values")
+
+        created_at = datetime.now(timezone.utc)
+        batch_id = metadata_repository.reserve_load_batch_id()
+        target = build_batch_target(
+            created_at=created_at,
+            extension=".json",
+            bucket_name=self.minio_config.bucket_name,
+            compression="gzip",
+        )
+        payload = json.dumps(
+            records,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ).encode("utf-8")
+        stored_object = upload_bytes(
+            client=self.minio_client,
+            target=target,
+            payload=payload,
+            content_type="application/json",
+            compression="gzip",
+        )
+        metadata_repository.create_load_batch_and_attach_tasks(
+            batch_id=batch_id,
+            source_id=self.source_id,
+            file_path=stored_object.target.storage_path,
+            file_format="json",
+            compression=stored_object.compression,
+            row_count=len(records),
+            file_hash=stored_object.stored_hash,
+            task_ids=task_ids,
+        )
+
+        self.batch_records.clear()
+        self.batch_started_at = None
+
+        return {
+            "batch_id": batch_id,
+            "file_path": stored_object.target.storage_path,
+            "object_name": stored_object.target.object_name,
+            "file_format": "json",
+            "compression": stored_object.compression,
+            "row_count": len(records),
+            "file_hash": stored_object.stored_hash,
+            "stored_length": stored_object.stored_length,
+            "task_ids": task_ids,
+            "reason": reason,
+            "status": "pending",
+        }
 
     def extract_table_data(self, table_selector) -> dict[str, str]:
         """Convert a two-column SUUMO table into key-value text data."""
@@ -193,25 +402,20 @@ class SuumoPageSpider(scrapy.Spider):
 
         return extracted_values
 
-    def extract_response_id(self, response) -> str:
-        """Extract the SUUMO listing id from hidden fields or the response URL."""
+    def absolute_task_url(self, task_url: str) -> str:
+        """Return an absolute URL for Scrapy's TextResponse wrapper."""
 
-        hidden_jnc = response.css("input[name='jnc']::attr(value)").get()
-        if hidden_jnc:
-            return f"jnc_{hidden_jnc.strip()}"
+        if task_url.startswith("http://") or task_url.startswith("https://"):
+            return task_url
+        if task_url.startswith("/"):
+            return f"{self.source_base_url.rstrip('/')}{task_url}"
 
-        canonical_url = response.css("link[rel='canonical']::attr(href)").get()
-        return self.extract_id(canonical_url or response.url)
+        return f"{self.source_base_url.rstrip('/')}/{task_url}"
 
-    def extract_id(self, url: str) -> str:
-        """Extract the SUUMO listing id from a detail page URL path."""
+    def require_metadata_repository(self) -> CrawlerMetadataRepository:
+        """Return the initialized DB repository or fail loudly."""
 
-        path_parts = [part for part in urlparse(url).path.split("/") if part]
-        if not path_parts:
-            return url
+        if self.metadata_repository is None:
+            raise RuntimeError("Metadata repository is not initialized")
 
-        last_part = path_parts[-1]
-        if last_part.startswith("bc_"):
-            return last_part.removeprefix("bc_")
-
-        return last_part
+        return self.metadata_repository

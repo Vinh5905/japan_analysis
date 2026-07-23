@@ -42,14 +42,18 @@ FAKE_USER_AGENT_FALLBACK = (
     "Chrome/126.0.0.0 Safari/537.36"
 )
 
-# Temporary detail-page parser check: read one URL from tmp by default.
-SUUMO_PAGE_LINKS_FILE = "tmp/suumo_links.txt"
-SUUMO_PAGE_LINK_LIMIT = 1
+# Parser reads pending crawl_tasks and writes compressed JSON arrays to suumo/data.
+SUUMO_PAGE_TASK_LIMIT = 0
+SUUMO_PAGE_BATCH_SIZE = 100
+SUUMO_PAGE_BATCH_SECONDS = 300
+SUUMO_SOURCE_BASE_URL = "https://suumo.jp"
 
-# Temporary HTML landing demo: upload one detail page to MinIO by default.
+# HTML crawler reads every new tmp link by default. Set SUUMO_HTML_LINK_LIMIT=1
+# when only one page should be fetched for a local smoke check.
 SUUMO_HTML_LINKS_FILE = "tmp/suumo_links.txt"
-SUUMO_HTML_LINK_LIMIT = 1
-SUUMO_HTML_RAW_SNAPSHOT_START_ID = 1
+SUUMO_HTML_LINK_LIMIT = 0
+SUUMO_SOURCE_ID = 1
+SUUMO_RUN_CREATED_BY = "schedule"
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
@@ -67,6 +71,7 @@ SUUMO_HTML_RAW_SNAPSHOT_START_ID = 1
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.RandomUserAgentMiddleware": 400,
+    "crawler.middlewares.SuumoHtmlTaskClaimMiddleware": 410,
 }
 
 # Enable or disable extensions

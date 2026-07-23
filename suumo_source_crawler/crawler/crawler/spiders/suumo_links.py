@@ -6,6 +6,9 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import scrapy
 from scrapy import signals
 
+from crawler.metadata_db import CrawlerMetadataRepository
+from crawler.storage import task_url_hash
+
 
 class SuumoLinksSpider(scrapy.Spider):
     """Collect listing detail URLs from all SUUMO search result pages."""
@@ -26,7 +29,8 @@ class SuumoLinksSpider(scrapy.Spider):
         """Initialize per-run in-memory state for duplicate detection."""
 
         super().__init__(*args, **kwargs)
-        self.seen_links: set[str] = set()
+        self.seen_url_hashes: set[str] = set()
+        self.metadata_repository: CrawlerMetadataRepository | None = None
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -34,14 +38,25 @@ class SuumoLinksSpider(scrapy.Spider):
 
         spider = super().from_crawler(crawler, *args, **kwargs)
         crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
+        crawler.signals.connect(spider.close_spider, signal=signals.spider_closed)
         return spider
 
     def open_spider(self, spider):
-        """Reset the temporary output file before every spider run."""
+        """Reset the temporary output file and open the metadata DB connection."""
+
         self.logger.info("Resetting temporary output file %s", self.output_path)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         # This is intentionally overwritten on each run so parsers read fresh links only.
         self.output_path.write_text("", encoding="utf-8")
+        self.seen_url_hashes.clear()
+        self.metadata_repository = CrawlerMetadataRepository.from_env()
+
+    def close_spider(self, spider, reason):
+        """Close the metadata DB connection after the spider finishes."""
+
+        if self.metadata_repository is not None:
+            self.metadata_repository.close()
+            self.metadata_repository = None
 
     async def start(self):
         """Fetch the first result page once to discover the total page count."""
@@ -115,7 +130,6 @@ class SuumoLinksSpider(scrapy.Spider):
 
         if new_links:
             self.write_links(new_links)
-            self.seen_links.update(new_links)
 
     def extract_listing_links(self, response) -> list[str]:
         """Extract and normalize listing detail URLs from the SUUMO result container."""
@@ -125,15 +139,31 @@ class SuumoLinksSpider(scrapy.Spider):
         return [response.urljoin(link) for link in raw_links]
 
     def filter_new_links(self, links: list[str]) -> list[str]:
-        """Keep only unseen links while preserving the order found on the page."""
+        """Keep only links whose url_hash has never existed in crawl_tasks."""
+
+        if self.metadata_repository is None:
+            raise RuntimeError("Metadata repository is not initialized")
+
+        candidate_links: list[tuple[str, str]] = []
+        page_seen_hashes = set()
+        for link in links:
+            url_hash = task_url_hash(link)
+            if url_hash in self.seen_url_hashes or url_hash in page_seen_hashes:
+                continue
+            candidate_links.append((link, url_hash))
+            page_seen_hashes.add(url_hash)
+
+        existing_hashes = self.metadata_repository.fetch_existing_task_hashes(
+            url_hash for _, url_hash in candidate_links
+        )
 
         new_links = []
-        page_seen_links = set()
-        for link in links:
-            if link in self.seen_links or link in page_seen_links:
+        for link, url_hash in candidate_links:
+            if url_hash in existing_hashes:
                 continue
             new_links.append(link)
-            page_seen_links.add(link)
+            self.seen_url_hashes.add(url_hash)
+
         return new_links
 
     def write_links(self, links: list[str]) -> None:
