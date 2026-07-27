@@ -57,6 +57,33 @@ class PendingParseTask:
     storage_path: str
 
 
+@dataclass(frozen=True)
+class FailedCrawlTask:
+    """Represent one failed crawl task selected for a manual rerun."""
+
+    task_id: int
+    run_id: int
+    source_id: int
+    base_url: str
+    url: str
+    url_hash: str
+    error_type: str | None
+    error_message: str | None
+
+
+@dataclass(frozen=True)
+class CrawlTaskResult:
+    """Represent one crawl task result from a specific run."""
+
+    task_id: int
+    run_id: int
+    url: str
+    url_hash: str
+    status: str
+    error_type: str | None
+    error_message: str | None
+
+
 def load_postgres_config() -> PostgresConfig:
     """Load PostgreSQL connection settings from environment variables."""
 
@@ -141,6 +168,33 @@ class CrawlerMetadataRepository:
             )
             run_id, created_at = cursor.fetchone()
             return CrawlRunRecord(run_id=int(run_id), created_at=created_at)
+
+    def fetch_latest_run_id(self) -> int:
+        """Return the latest crawl_runs.run_id, or zero when no runs exist."""
+
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COALESCE(MAX(run_id), 0) FROM crawl_runs")
+            return int(cursor.fetchone()[0])
+
+    def fetch_manual_run_ids_after(self, run_id: int, source_id: int = 1) -> list[int]:
+        """Return manual run ids created after a known run id."""
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id
+                FROM crawl_runs
+                WHERE run_id > %s
+                  AND source_id = %s
+                  AND created_by = 'manual'
+                ORDER BY run_id
+                """,
+                (
+                    run_id,
+                    source_id,
+                ),
+            )
+            return [int(row[0]) for row in cursor.fetchall()]
 
     def finish_crawl_run(self, run_id: int) -> None:
         """Mark a crawl run as finished when the spider closes."""
@@ -240,6 +294,108 @@ class CrawlerMetadataRepository:
                     return None
 
                 return int(inserted_task[0])
+
+    def fetch_failed_crawl_tasks(
+        self,
+        source_id: int = 1,
+        limit: int = 0,
+    ) -> list[FailedCrawlTask]:
+        """Return latest failed crawl tasks for manual HTML reruns."""
+
+        limit_clause = ""
+        params: list[object] = [source_id]
+        if limit > 0:
+            limit_clause = "LIMIT %s"
+            params.append(limit)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                WITH ranked_tasks AS (
+                    SELECT
+                        ct.task_id,
+                        ct.run_id,
+                        cr.source_id,
+                        cs.base_url,
+                        ct.url,
+                        ct.url_hash,
+                        ct.status,
+                        ct.error_type,
+                        ct.error_message,
+                        row_number() OVER (
+                            PARTITION BY ct.url_hash
+                            ORDER BY ct.scheduled_at DESC, ct.task_id DESC
+                        ) AS url_rank
+                    FROM crawl_tasks AS ct
+                    JOIN crawl_runs AS cr
+                        ON cr.run_id = ct.run_id
+                    JOIN crawl_sources AS cs
+                        ON cs.source_id = cr.source_id
+                    WHERE cr.source_id = %s
+                )
+                SELECT
+                    task_id,
+                    run_id,
+                    source_id,
+                    base_url,
+                    url,
+                    url_hash,
+                    error_type,
+                    error_message
+                FROM ranked_tasks
+                WHERE url_rank = 1
+                  AND status = 'failed'
+                ORDER BY task_id
+                {limit_clause}
+                """,
+                params,
+            )
+            return [
+                FailedCrawlTask(
+                    task_id=int(row[0]),
+                    run_id=int(row[1]),
+                    source_id=int(row[2]),
+                    base_url=row[3],
+                    url=row[4],
+                    url_hash=row[5],
+                    error_type=row[6],
+                    error_message=row[7],
+                )
+                for row in cursor.fetchall()
+            ]
+
+    def fetch_task_results_for_run(self, run_id: int) -> list[CrawlTaskResult]:
+        """Return crawl task statuses for a specific crawl run."""
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    task_id,
+                    run_id,
+                    url,
+                    url_hash,
+                    status::text,
+                    error_type,
+                    error_message
+                FROM crawl_tasks
+                WHERE run_id = %s
+                ORDER BY task_id
+                """,
+                (run_id,),
+            )
+            return [
+                CrawlTaskResult(
+                    task_id=int(row[0]),
+                    run_id=int(row[1]),
+                    url=row[2],
+                    url_hash=row[3],
+                    status=row[4],
+                    error_type=row[5],
+                    error_message=row[6],
+                )
+                for row in cursor.fetchall()
+            ]
 
     def fetch_pending_parse_tasks(self, limit: int = 0) -> list[PendingParseTask]:
         """Return crawl tasks whose raw snapshots are ready for parser batching."""

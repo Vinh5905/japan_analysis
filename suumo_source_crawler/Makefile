@@ -91,6 +91,14 @@ python3: ## Run local python3. Use args="..." for options like -m.
 python3-container: ## Run container python. Use args="..." for options like -m.
 	$(COMPOSE) --env-file $(ENV_FILE) exec $(CONTAINER_WORKDIR) python python $(PYTHON_ARGS)
 
+.PHONY: minio-preview
+minio-preview: ## Preview a MinIO object, optionally pass path="suumo/..." opts="--write-json"
+	$(COMPOSE) --env-file $(ENV_FILE) exec -w /app/crawler python python tools/minio_preview.py $(path) $(opts)
+
+.PHONY: manual-rerun-failed-html
+manual-rerun-failed-html: ## Rerun failed crawl_tasks through suumo_html, optionally pass opts="--limit 10"
+	$(COMPOSE) --env-file $(ENV_FILE) exec -w /app/crawler python python tools/manual_rerun_failed_html.py $(opts)
+
 # Allow commands like `make python3 main/main.py` where the script path is treated as an argument.
 # Use args="..." when arguments start with "-", because make parses those as its own options.
 .PHONY: FORCE

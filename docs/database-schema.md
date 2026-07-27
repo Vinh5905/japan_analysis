@@ -232,6 +232,7 @@ Các cột dữ liệu tiếng Nhật hiện gồm:
 階建
 築年月
 エネルギー消費性能
+断熱性能
 目安光熱費
 損保
 駐車場
@@ -248,6 +249,7 @@ SUUMO物件コード
 取り扱い店舗物件コード
 総戸数
 次回更新予定日
+備考
 ```
 
 `data_hash` chỉ được tính từ `image_public_url` và các cột tiếng Nhật ở trên.

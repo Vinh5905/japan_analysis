@@ -23,6 +23,8 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `suumo_source_crawler/crawler/crawler/spiders/suumo_links.py`: Scrapy spider `suumo_links` dùng để crawl toàn bộ page kết quả SUUMO và ghi listing URLs vào `suumo_source_crawler/crawler/tmp/suumo_links.txt`. File output được truncate mỗi lần spider chạy; trước khi ghi link, spider hash URL rồi bỏ qua URL đã có trong `crawl_tasks.url_hash`.
 - `suumo_source_crawler/crawler/crawler/spiders/suumo_html.py`: Scrapy spider `suumo_html` đọc tmp links mới, tạo `crawl_runs` khi mở spider, claim một `crawl_tasks` row qua downloader middleware khi request thật sự bắt đầu, upload HTML gzip lên MinIO, ghi `raw_snapshots`, update task sang `pending` hoặc `failed`, tăng `crawl_runs.total_urls` khi task ra kết quả, finalize task đang dở thành `failed` khi spider đóng, và ghi `finished_at`. Trong một run, cùng `url_hash` chỉ có một task.
 - `suumo_source_crawler/crawler/crawler/spiders/suumo_page.py`: Scrapy spider `suumo_page` đọc `crawl_tasks.status = 'pending'` và `batch_id IS NULL`, tải raw HTML từ MinIO, parse thành JSON parser record đủ key/null, buffer mặc định 100 record hoặc 300 giây, upload JSON array gzip lên `suumo/data`, tạo `load_batches`, rồi update các task sang batch đó.
+- `suumo_source_crawler/crawler/tools/minio_preview.py`: helper tải `storage_path` từ MinIO, tự giải nén `.gz`, pretty print JSON hoặc ghi HTML ra `tmp/minio_preview`. HTML preview tự inject `<base href="https://suumo.jp/">` để CSS/image relative load được khi mở bằng live server; dùng `--raw-html` nếu cần đúng bytes HTML gốc sau giải nén. Có thể sửa hằng `STORAGE_PATH` trong file hoặc truyền path qua CLI.
+- `suumo_source_crawler/crawler/tools/manual_rerun_failed_html.py`: helper manual chọn những URL hash có latest `crawl_tasks.status = 'failed'`, ghi URL vào tmp riêng, chạy lại spider `suumo_html` với `created_by = manual`, rồi ghi JSON report và file `.txt` chứa original `task_id` nào vẫn failed sau rerun vào `tmp/manual_rerun_reports`. Nếu URL đã rerun thành `pending` hoặc `success` ở task mới hơn thì failed task cũ sẽ không bị chọn lại.
 - `suumo_source_crawler/docker/python/healthcheck.py`: healthcheck Python service bằng cách kiểm tra kết nối PostgreSQL và MinIO.
 
 ## Services
@@ -72,6 +74,16 @@ Các Makefile export `DOCKER_BUILDKIT=1` và `COMPOSE_DOCKER_CLI_BUILD=1`, nên 
 `make -C suumo_source_crawler up` và `up-d` chỉ start service bằng image đã build sẵn. Khi cần build lại rồi start, dùng `make -C suumo_source_crawler up-build` hoặc `up-build-d`.
 
 Khi đứng trong `suumo_source_crawler`, có thể chạy Python local bằng `make python3 <script>`, ví dụ `make python3 main/main.py`. Nếu muốn chạy bên trong container Python, dùng `make python3-container <script>`. Với argument bắt đầu bằng `-`, dùng biến `args`, ví dụ `make python3-container args="-m scrapy startproject crawler"` vì `make` sẽ tự parse `-m` như option của Makefile nếu viết trực tiếp. Với Scrapy project, chạy trong thư mục có `scrapy.cfg`, ví dụ `make python3-container workdir=/app/crawler args="-m scrapy crawl suumo_links"`.
+
+Preview MinIO object:
+`make -C suumo_source_crawler python3-container workdir=/app/crawler args="tools/minio_preview.py suumo/data/20260723T165050155977Z.json.gz"`.
+Shortcut tương đương:
+`make -C suumo_source_crawler minio-preview path="suumo/data/20260723T165050155977Z.json.gz"`.
+
+Manual rerun failed HTML tasks:
+`make -C suumo_source_crawler manual-rerun-failed-html`.
+Dry run:
+`make -C suumo_source_crawler manual-rerun-failed-html opts="--dry-run --limit 10"`.
 
 Sau khi chạy:
 
