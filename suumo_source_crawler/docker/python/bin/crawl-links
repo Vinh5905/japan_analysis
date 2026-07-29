@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Step 1: discover SUUMO detail URLs and write them to /app/crawler/tmp.
+# Extra Scrapy args can be appended, for example: crawl-links -s LOG_LEVEL=DEBUG
+cd /app/crawler
+exec python -m scrapy crawl suumo_links "$@"

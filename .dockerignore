@@ -1,0 +1,39 @@
+.git/
+.gitignore
+
+# Local env files must stay on the host. Release images receive config at runtime.
+.env
+.env.*
+!.env.release.example
+
+# Local notes and generated artifacts are not needed in the release image.
+guides/
+tmp/
+logs/
+data/
+*.log
+
+# Python cache, virtualenvs, and test/build output.
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# OS/editor files.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

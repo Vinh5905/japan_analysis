@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Step 2: read the links file, fetch detail page HTML, gzip it, and upload it to MinIO.
+# The spider also creates crawl_runs/crawl_tasks/raw_snapshots metadata in Postgres.
+cd /app/crawler
+exec python -m scrapy crawl suumo_html "$@"

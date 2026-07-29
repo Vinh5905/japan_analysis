@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Step 3: parse pending raw snapshots from MinIO and write compressed JSON batches to suumo/data.
+# The spider updates crawl_tasks.batch_id after each batch is uploaded.
+cd /app/crawler
+exec python -m scrapy crawl suumo_page "$@"

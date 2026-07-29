@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+# Convenience shell for inspecting the release container.
+cd /app/crawler
+exec sh "$@"

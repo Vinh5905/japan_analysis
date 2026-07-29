@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Bootstrap release runtime dependencies from inside the crawler image.
+# This initializes the Postgres schema when missing and creates MinIO prefixes.
+cd /app/crawler
+exec python tools/release_bootstrap.py "$@"

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+# Manual recovery command: rerun only URL hashes whose latest crawl task is still failed.
+cd /app/crawler
+exec python tools/manual_rerun_failed_html.py "$@"

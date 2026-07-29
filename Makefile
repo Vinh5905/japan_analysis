@@ -3,6 +3,11 @@ SHELL := /bin/sh
 COMPOSE := docker compose
 ENV_FILE := .env
 MIGRATIONS_DIR := docker/postgres/migrations
+RELEASE_COMPOSE := docker-compose.release.yml
+RELEASE_ENV_FILE ?= .env
+RELEASE_COMPOSE_CMD := $(COMPOSE) --env-file $(RELEASE_ENV_FILE) -f $(RELEASE_COMPOSE)
+DOCKERHUB_IMAGE ?= kevinpham9257/suumo-crawler
+tag ?= latest
 export DOCKER_BUILDKIT ?= 1
 export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
@@ -19,7 +24,10 @@ help: ## Show available root commands
 	@printf "  make infra-up-d\n"
 	@printf "  make infra-ps\n"
 	@printf "  make infra-logs service=postgres\n"
-	@printf "  make db-migrate-all\n\n"
+	@printf "  make db-migrate-all\n"
+	@printf "  make docker-build-release tag=latest\n"
+	@printf "  make release-up\n"
+	@printf "  make release-crawl-links\n\n"
 
 .PHONY: infra-config
 infra-config: ## Validate and render the shared infrastructure compose config
@@ -87,3 +95,78 @@ infra-clean: ## Stop shared infrastructure and remove anonymous containers/netwo
 .PHONY: infra-clean-volumes
 infra-clean-volumes: ## Stop shared infrastructure and remove named volumes. This deletes local Postgres and MinIO data.
 	$(COMPOSE) --env-file $(ENV_FILE) down --volumes --remove-orphans
+
+.PHONY: docker-build-release
+docker-build-release: ## Build release crawler image, optionally pass tag=2026.07.29 DOCKERHUB_IMAGE=user/image
+	docker build -f suumo_source_crawler/Dockerfile.release -t $(DOCKERHUB_IMAGE):$(tag) .
+
+.PHONY: docker-login
+docker-login: ## Login to Docker Hub before pushing release images
+	docker login
+
+.PHONY: docker-push-release
+docker-push-release: ## Push release crawler image, optionally pass tag=2026.07.29 DOCKERHUB_IMAGE=user/image
+	docker push $(DOCKERHUB_IMAGE):$(tag)
+
+.PHONY: release-config
+release-config: ## Validate and render release compose config
+	$(RELEASE_COMPOSE_CMD) --profile tasks --profile tools config
+
+.PHONY: release-pull
+release-pull: ## Pull release images
+	$(RELEASE_COMPOSE_CMD) --profile tasks --profile tools pull
+
+.PHONY: release-up
+release-up: ## Start release infra and run idempotent DB/MinIO bootstrap
+	$(RELEASE_COMPOSE_CMD) up -d postgres minio
+	$(RELEASE_COMPOSE_CMD) run --rm minio-init
+	$(RELEASE_COMPOSE_CMD) run --rm crawler-init
+
+.PHONY: release-init
+release-init: ## Re-run release bootstrap without recreating service containers
+	$(RELEASE_COMPOSE_CMD) run --rm minio-init
+	$(RELEASE_COMPOSE_CMD) run --rm crawler-init
+
+.PHONY: release-ps
+release-ps: ## Show release service status
+	$(RELEASE_COMPOSE_CMD) ps
+
+.PHONY: release-logs
+release-logs: ## Follow release logs, optionally pass service=postgres|minio
+	$(RELEASE_COMPOSE_CMD) logs -f $(service)
+
+.PHONY: release-down
+release-down: ## Stop release containers, keep named volumes
+	$(RELEASE_COMPOSE_CMD) down --remove-orphans
+
+.PHONY: release-clean-volumes
+release-clean-volumes: ## Stop release containers and remove named volumes. This deletes release Postgres and MinIO data.
+	$(RELEASE_COMPOSE_CMD) down --volumes --remove-orphans
+
+.PHONY: release-crawl-links
+release-crawl-links: release-up ## Run suumo_links in a one-shot release container
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-links
+
+.PHONY: release-crawl-html
+release-crawl-html: release-up ## Run suumo_html in a one-shot release container
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-html
+
+.PHONY: release-crawl-page
+release-crawl-page: release-up ## Run suumo_page in a one-shot release container
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-page
+
+.PHONY: release-minio-preview
+release-minio-preview: release-up ## Preview a MinIO object from release runtime, pass path="suumo/..." opts="--write-json"
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-tools minio-preview $(path) $(opts)
+
+.PHONY: release-manual-rerun-failed-html
+release-manual-rerun-failed-html: release-up ## Rerun failed HTML tasks in release runtime, optionally pass opts="--limit 10"
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-tools manual-rerun-failed-html $(opts)
+
+.PHONY: release-shell
+release-shell: release-up ## Open a shell inside the release crawler image
+	$(RELEASE_COMPOSE_CMD) run --rm suumo-tools crawler-shell
+
+.PHONY: release-db-migrate-all
+release-db-migrate-all: release-up ## Run bundled SQL migrations from the release crawler image
+	$(RELEASE_COMPOSE_CMD) run --rm crawler-init crawler-init --skip-minio --run-migrations

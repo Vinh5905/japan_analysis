@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+ARG PYTHON_IMAGE=python:3.12.4-slim-bookworm
+FROM ${PYTHON_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app/crawler:/app
+
+WORKDIR /app
+
+# The release image needs libpq for psycopg and psql for the DB bootstrap.
+RUN --mount=type=cache,id=suumo-release-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=suumo-release-apt-lib,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl libpq5 netcat-openbsd postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY suumo_source_crawler/requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,id=suumo-release-pip,target=/root/.cache/pip \
+    pip install --upgrade pip \
+    && pip install -r /tmp/requirements.txt
+
+# Copy only the runtime files needed by the image. The release compose file does
+# not mount source code, so every command must be available from these COPYs.
+COPY suumo_source_crawler/crawler /app/crawler
+COPY suumo_source_crawler/main /app/main
+COPY docker/postgres/init /app/docker/postgres/init
+COPY docker/postgres/migrations /app/docker/postgres/migrations
+COPY suumo_source_crawler/docker/python/healthcheck.py /usr/local/bin/python-healthcheck
+COPY suumo_source_crawler/docker/python/bin/ /usr/local/bin/
+
+RUN chmod +x /usr/local/bin/python-healthcheck \
+    /usr/local/bin/crawl-links \
+    /usr/local/bin/crawl-html \
+    /usr/local/bin/crawl-page \
+    /usr/local/bin/crawler-init \
+    /usr/local/bin/crawler-shell \
+    /usr/local/bin/manual-rerun-failed-html \
+    /usr/local/bin/minio-preview
+
+WORKDIR /app/crawler
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=15s \
+    CMD ["python-healthcheck"]
+
+CMD ["crawler-shell"]

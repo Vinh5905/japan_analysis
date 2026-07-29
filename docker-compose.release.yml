@@ -1,0 +1,181 @@
+name: ${RELEASE_COMPOSE_PROJECT_NAME:-suumo_crawler_release}
+
+# Release compose is for machines that only pull images. It does not bind-mount
+# the source tree into the crawler container; the Python code and SQL bootstrap
+# files are copied into the image at build time.
+
+x-crawler-env: &crawler-env
+  APP_ENV: ${APP_ENV:-release}
+  TZ: ${TZ:-Asia/Ho_Chi_Minh}
+  PYTHONPATH: /app/crawler:/app
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+  POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+  MINIO_HOST: minio
+  MINIO_API_PORT: 9000
+  MINIO_ENDPOINT_URL: http://minio:9000
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+  MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
+  MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
+  MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
+  SUUMO_SOURCE_ID: ${SUUMO_SOURCE_ID:-1}
+  SUUMO_SOURCE_BASE_URL: ${SUUMO_SOURCE_BASE_URL:-https://suumo.jp}
+  SUUMO_RUN_CREATED_BY: ${SUUMO_RUN_CREATED_BY:-schedule}
+  SUUMO_HTML_LINKS_FILE: ${SUUMO_HTML_LINKS_FILE:-tmp/suumo_links.txt}
+  SUUMO_HTML_LINK_LIMIT: ${SUUMO_HTML_LINK_LIMIT:-0}
+  SUUMO_PAGE_TASK_LIMIT: ${SUUMO_PAGE_TASK_LIMIT:-0}
+  SUUMO_PAGE_BATCH_SIZE: ${SUUMO_PAGE_BATCH_SIZE:-100}
+  SUUMO_PAGE_BATCH_SECONDS: ${SUUMO_PAGE_BATCH_SECONDS:-300}
+
+x-crawler-service: &crawler-service
+  image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
+  environment:
+    <<: *crawler-env
+  volumes:
+    - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
+  networks:
+    - release_net
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.3-bookworm}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+      POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:---encoding=UTF8 --locale=C}
+      PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - release_postgres_data:/var/lib/postgresql/data
+    networks:
+      - release_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-07-16T23-46-41Z}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - release_minio_data:/data
+    networks:
+      - release_net
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2024-07-15T17-46-06Z}
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local "http://$${MINIO_HOST}:$${MINIO_API_PORT}" "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        OLD_IFS="$${IFS}"
+        IFS=","
+        for bucket in $${MINIO_DEFAULT_BUCKETS}; do
+          bucket="$$(printf "%s" "$${bucket}" | sed "s/^ *//;s/ *$$//")"
+          if [ -n "$${bucket}" ]; then
+            mc mb --ignore-existing "local/$${bucket}"
+          fi
+        done
+        IFS="$${OLD_IFS}"
+    environment:
+      MINIO_HOST: minio
+      MINIO_API_PORT: 9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
+    networks:
+      - release_net
+    restart: "no"
+
+  crawler-init:
+    <<: *crawler-service
+    command: crawler-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  suumo-links:
+    <<: *crawler-service
+    command: crawl-links
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles: ["tasks"]
+    restart: "no"
+
+  suumo-html:
+    <<: *crawler-service
+    command: crawl-html
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles: ["tasks"]
+    restart: "no"
+
+  suumo-page:
+    <<: *crawler-service
+    command: crawl-page
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles: ["tasks"]
+    restart: "no"
+
+  suumo-tools:
+    <<: *crawler-service
+    command: crawler-shell
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    profiles: ["tools"]
+    restart: "no"
+
+volumes:
+  release_postgres_data:
+    driver: local
+  release_minio_data:
+    driver: local
+
+networks:
+  release_net:
+    driver: bridge

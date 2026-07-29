@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+# Download a MinIO object, decompress .gz payloads, and preview JSON/HTML locally.
+cd /app/crawler
+exec python tools/minio_preview.py "$@"
