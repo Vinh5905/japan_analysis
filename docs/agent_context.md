@@ -8,7 +8,7 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 ## Những gì đã thiết lập
 
 - `docker-compose.yml`: orchestration root cho hạ tầng dùng chung gồm `postgres`, `minio`, và `minio-init`.
-- `docker-compose.release.yml`: orchestration release all-in-one cho máy chỉ pull image. File này chạy PostgreSQL, MinIO, `minio-init`, `crawler-init`, và các one-shot crawler services từ image `kevinpham9257/suumo-crawler:<tag>`; không bind-mount source code crawler.
+- `docker-compose.release.yml`: orchestration release all-in-one cho máy chỉ pull image. File này chạy PostgreSQL, MinIO, `crawler-init`, và các one-shot crawler services từ image `kevinpham9257/suumo-crawler:<tag>`; không bind-mount source code crawler.
 - `Makefile`: shortcut root chỉ cho hạ tầng dùng chung. Các lệnh crawler nằm trong `suumo_source_crawler/Makefile`.
 - Root `Makefile` cũng có nhóm lệnh release: build/push image Docker Hub, start release runtime, chạy `suumo_links`, `suumo_html`, `suumo_page`, preview MinIO và manual rerun failed HTML từ image release.
 - `.dockerignore`: root build context cho release image, loại bỏ env/local cache/guides/tmp để không đưa ghi chú hoặc runtime artifact vào image.
@@ -17,7 +17,9 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `docker/postgres/init/001_create_crawler_metadata.sql`: init fresh schema metadata crawler gồm `config`, `crawl_sources`, `crawl_runs`, `raw_snapshots`, `crawl_tasks`, và `load_batches`. Parser records là JSON object trong batch file, không phải bảng DB. File này là schema mới nhất cho database bootstrap mới.
 - `docker/postgres/migrations/`: SQL migrations cho database đã tồn tại. Chạy một file bằng `make db-migrate file=<path>` hoặc chạy toàn bộ bằng `make db-migrate-all`. Hiện có migration seed SUUMO source với `robots_policy = 'allowed'` và `notes = NULL`, migration để `crawl_tasks` quản lý raw snapshot, migration xóa `crawl_runs.status`/`started_at`, migration scope `url_hash` theo run, và migration thay `parser_records` table bằng `crawl_tasks.batch_id -> load_batches`.
 - `docs/database-schema.md`: tài liệu schema hiện tại, mô tả từng bảng/cột/type, enum, quy tắc URL hash, data hash, và MinIO storage path.
+- `docs/vps-deployment-openvpn.md`: runbook triển khai VPS từ SSH key, Docker/Git setup, clone repo, chạy release compose, và cấu hình OpenVPN host theo cách B với route giữ SSH.
 - `docker/minio/create-buckets.sh`: tạo sẵn bucket MinIO từ biến `MINIO_DEFAULT_BUCKETS`.
+- Release không dùng service `minio-init`; command `crawler-init` chạy `main.py`, và `main.py` tự tạo bucket/prefix MinIO.
 - `suumo_source_crawler/docker-compose.yml`: orchestration riêng cho Python service của crawler SUUMO, join vào shared network.
 - `suumo_source_crawler/Makefile`: shortcut riêng cho Python service của crawler SUUMO.
 - `suumo_source_crawler/Dockerfile`: Python runtime dev cố định theo image `python:3.12.4-slim-bookworm`, cài dependencies crawler/data cơ bản từ `requirements.txt`, dùng BuildKit cache mount cho `apt` và `pip`, có các wrapper command `crawl-links`, `crawl-html`, `crawl-page`, `crawler-init`, `minio-preview`, và `manual-rerun-failed-html`.
@@ -93,16 +95,13 @@ Dry run:
 
 ## Cách build/chạy release image
 
-Build image Docker Hub local:
-`make docker-build-release tag=latest`.
-
-Push image:
-`make docker-login`, sau đó `make docker-push-release tag=latest`.
+Build và push image multi-platform cho VPS:
+`make docker-login`, sau đó `make docker-build-push-release tag=latest`. Lệnh này dùng `docker buildx build --platform linux/amd64,linux/arm64 --push` để VPS amd64 và máy Apple Silicon arm64 đều pull được cùng tag.
 
 Chạy từ image đã publish:
 `make release-pull`, `make release-up`, rồi chạy lần lượt `make release-crawl-links`, `make release-crawl-html`, `make release-crawl-page`.
 
-`make release-up` start PostgreSQL/MinIO và chạy `crawler-init`. `crawler-init` idempotent: nếu schema đã đủ bảng crawler thì bỏ qua full init SQL; MinIO prefixes vẫn được kiểm tra/tạo lại bằng `main.py`.
+`make release-up` start PostgreSQL/MinIO và chạy `crawler-init`. `crawler-init` idempotent: nếu schema đã đủ bảng crawler thì bỏ qua full init SQL; MinIO bucket/prefixes vẫn được kiểm tra/tạo lại bằng `main.py`.
 
 Sau khi chạy:
 

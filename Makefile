@@ -8,6 +8,7 @@ RELEASE_ENV_FILE ?= .env
 RELEASE_COMPOSE_CMD := $(COMPOSE) --env-file $(RELEASE_ENV_FILE) -f $(RELEASE_COMPOSE)
 DOCKERHUB_IMAGE ?= kevinpham9257/suumo-crawler
 tag ?= latest
+PLATFORMS ?= linux/amd64,linux/arm64
 export DOCKER_BUILDKIT ?= 1
 export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
@@ -25,7 +26,7 @@ help: ## Show available root commands
 	@printf "  make infra-ps\n"
 	@printf "  make infra-logs service=postgres\n"
 	@printf "  make db-migrate-all\n"
-	@printf "  make docker-build-release tag=latest\n"
+	@printf "  make docker-build-push-release tag=latest\n"
 	@printf "  make release-up\n"
 	@printf "  make release-crawl-links\n\n"
 
@@ -96,17 +97,23 @@ infra-clean: ## Stop shared infrastructure and remove anonymous containers/netwo
 infra-clean-volumes: ## Stop shared infrastructure and remove named volumes. This deletes local Postgres and MinIO data.
 	$(COMPOSE) --env-file $(ENV_FILE) down --volumes --remove-orphans
 
-.PHONY: docker-build-release
-docker-build-release: ## Build release crawler image, optionally pass tag=2026.07.29 DOCKERHUB_IMAGE=user/image
-	docker build -f suumo_source_crawler/Dockerfile.release -t $(DOCKERHUB_IMAGE):$(tag) .
+.PHONY: docker-buildx-bootstrap
+docker-buildx-bootstrap:
+	@docker buildx inspect suumo-release-builder >/dev/null 2>&1 || docker buildx create --name suumo-release-builder --use
+	docker buildx use suumo-release-builder
+	docker buildx inspect --bootstrap
+
+.PHONY: docker-build-push-release
+docker-build-push-release: docker-buildx-bootstrap ## Build and push multi-platform release image for VPS/server usage
+	docker buildx build --platform $(PLATFORMS) -f suumo_source_crawler/Dockerfile.release -t $(DOCKERHUB_IMAGE):$(tag) --push .
 
 .PHONY: docker-login
 docker-login: ## Login to Docker Hub before pushing release images
 	docker login
 
-.PHONY: docker-push-release
-docker-push-release: ## Push release crawler image, optionally pass tag=2026.07.29 DOCKERHUB_IMAGE=user/image
-	docker push $(DOCKERHUB_IMAGE):$(tag)
+.PHONY: docker-inspect-release
+docker-inspect-release: ## Inspect the remote release image manifest and supported platforms
+	docker buildx imagetools inspect $(DOCKERHUB_IMAGE):$(tag)
 
 .PHONY: release-config
 release-config: ## Validate and render release compose config
@@ -119,12 +126,10 @@ release-pull: ## Pull release images
 .PHONY: release-up
 release-up: ## Start release infra and run idempotent DB/MinIO bootstrap
 	$(RELEASE_COMPOSE_CMD) up -d postgres minio
-	$(RELEASE_COMPOSE_CMD) run --rm minio-init
 	$(RELEASE_COMPOSE_CMD) run --rm crawler-init
 
 .PHONY: release-init
 release-init: ## Re-run release bootstrap without recreating service containers
-	$(RELEASE_COMPOSE_CMD) run --rm minio-init
 	$(RELEASE_COMPOSE_CMD) run --rm crawler-init
 
 .PHONY: release-ps

@@ -85,35 +85,6 @@ services:
       retries: 8
       start_period: 15s
 
-  minio-init:
-    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2024-07-15T17-46-06Z}
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        mc alias set local "http://$${MINIO_HOST}:$${MINIO_API_PORT}" "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
-        OLD_IFS="$${IFS}"
-        IFS=","
-        for bucket in $${MINIO_DEFAULT_BUCKETS}; do
-          bucket="$$(printf "%s" "$${bucket}" | sed "s/^ *//;s/ *$$//")"
-          if [ -n "$${bucket}" ]; then
-            mc mb --ignore-existing "local/$${bucket}"
-          fi
-        done
-        IFS="$${OLD_IFS}"
-    environment:
-      MINIO_HOST: minio
-      MINIO_API_PORT: 9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
-    networks:
-      - release_net
-    restart: "no"
-
   crawler-init:
     <<: *crawler-service
     command: crawler-init
@@ -122,8 +93,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
     restart: "no"
 
   suumo-links:
