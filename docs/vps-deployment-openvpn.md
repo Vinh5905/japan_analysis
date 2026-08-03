@@ -118,10 +118,9 @@ apt upgrade -y
 Cài tool nền:
 
 ```bash
-apt install -y git curl ca-certificates nano
+apt install -y curl ca-certificates nano
 ```
 
-- `git`: clone repo từ GitHub.
 - `curl`: kiểm tra IP public, tải script cài Docker.
 - `ca-certificates`: giúp HTTPS certificate hoạt động đúng.
 - `nano`: editor đơn giản để sửa `.env` và OpenVPN config.
@@ -157,26 +156,32 @@ exit
 
 Nếu đang dùng `root`, thường không cần bước group này.
 
-## 6. Clone repo từ GitHub
+## 6. Chuẩn bị release folder trên VPS
 
 Chạy trên VPS:
 
 ```bash
-mkdir -p /opt
-cd /opt
-git clone https://github.com/Vinh5905/japan_analysis.git
-cd japan_analysis
+mkdir -p /opt/suumo-crawler
+cd /opt/suumo-crawler
+mkdir -p tmp
 ```
 
-Repo được clone vào `/opt/japan_analysis`. Trong release flow, VPS cần repo chủ yếu để lấy `Makefile`, `docker-compose.release.yml`, `.env.release.example`, và docs. Code crawler thật chạy từ Docker image đã publish.
+Folder `/opt/suumo-crawler` là nơi đặt file release runtime. VPS không cần source Python và không cần `Makefile`; code crawler thật nằm trong Docker image `kevinpham9257/suumo-crawler:<tag>`.
 
-Nếu repo private, dùng SSH deploy key hoặc GitHub token thay vì HTTPS public clone.
+Từ máy local, copy file release lên VPS:
+
+```bash
+scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml .env.release.example VPS_USER@VPS_HOST:/opt/suumo-crawler/
+```
+
+Nếu bạn đã có file `.env` riêng trên local, copy thẳng `.env` thay vì `.env.release.example`.
 
 ## 7. Tạo file `.env` cho release
 
-Chạy trên VPS trong `/opt/japan_analysis`:
+Chạy trên VPS trong `/opt/suumo-crawler`:
 
 ```bash
+cd /opt/suumo-crawler
 cp .env.release.example .env
 nano .env
 ```
@@ -236,7 +241,7 @@ Platform: linux/arm64
 
 ## 9. Pull image và start release runtime trên VPS
 
-Chạy trên VPS trong `/opt/japan_analysis`:
+Chạy trên VPS trong `/opt/suumo-crawler`:
 
 ```bash
 docker login
@@ -245,7 +250,7 @@ docker login
 Lệnh này chỉ cần khi Docker Hub image là private hoặc Docker Hub yêu cầu authenticated pull. Nếu image public, có thể bỏ qua.
 
 ```bash
-make release-pull
+docker compose --env-file .env -f docker-compose.release.yml --profile tasks --profile tools pull
 ```
 
 Lệnh này pull các image cần thiết: crawler image, PostgreSQL, MinIO.
@@ -253,10 +258,11 @@ Lệnh này pull các image cần thiết: crawler image, PostgreSQL, MinIO.
 Start PostgreSQL, MinIO và bootstrap:
 
 ```bash
-make release-up
+docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
+docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
 ```
 
-`release-up` làm các việc:
+Hai lệnh này làm các việc:
 
 - Start `postgres` container.
 - Start `minio` container.
@@ -271,13 +277,13 @@ make release-up
 Kiểm tra container:
 
 ```bash
-make release-ps
+docker compose --env-file .env -f docker-compose.release.yml ps
 ```
 
 Xem log:
 
 ```bash
-make release-logs
+docker compose --env-file .env -f docker-compose.release.yml logs -f
 ```
 
 ## 10. Chạy crawler trên VPS
@@ -285,24 +291,136 @@ make release-logs
 Chạy theo thứ tự:
 
 ```bash
-make release-crawl-links
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
 ```
 
 Spider `suumo_links` lấy danh sách link mới và ghi vào `tmp/suumo_links.txt`.
 
 ```bash
-make release-crawl-html
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
 ```
 
 Spider `suumo_html` đọc link mới, crawl HTML, gzip payload, upload lên MinIO `suumo/page_source`, và ghi metadata vào PostgreSQL.
 
 ```bash
-make release-crawl-page
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
 ```
 
 Spider `suumo_page` đọc các task `pending`, tải raw HTML từ MinIO, parse dữ liệu, gzip JSON batch, upload lên MinIO `suumo/data`, rồi update `crawl_tasks.batch_id`.
 
-## 11. Cài OpenVPN client trên host
+## 11. Kết nối PostgreSQL và MinIO từ máy local
+
+Cách khuyến nghị là dùng SSH tunnel. Máy local chỉ kết nối tới `localhost`, còn SSH sẽ chuyển traffic vào service đang chạy trên VPS. Cách này không cần mở trực tiếp PostgreSQL hoặc MinIO ra internet.
+
+Trước hết kiểm tra service trên VPS:
+
+```bash
+cd /opt/suumo-crawler
+docker compose --env-file .env -f docker-compose.release.yml ps
+```
+
+Kỳ vọng `postgres` và `minio` đang `Up` hoặc `healthy`.
+
+Xem thông tin PostgreSQL trong `.env` trên VPS:
+
+```bash
+cd /opt/suumo-crawler
+grep -E '^(POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_PORT)=' .env
+```
+
+Mở tunnel PostgreSQL từ máy local:
+
+```bash
+ssh -N -L 15432:127.0.0.1:5432 thuevpsgiare
+```
+
+Nếu không dùng SSH alias `thuevpsgiare`, dùng dạng đầy đủ:
+
+```bash
+ssh -i ~/.ssh/suumo_vps -p VPS_SSH_PORT -N -L 15432:127.0.0.1:5432 VPS_USER@VPS_HOST
+```
+
+Ý nghĩa `-L 15432:127.0.0.1:5432`:
+
+```text
+máy local localhost:15432
+-> SSH tunnel
+-> VPS 127.0.0.1:5432
+-> PostgreSQL container
+```
+
+- `15432`: port trên máy local. Dùng `15432` để tránh đụng PostgreSQL local nếu máy bạn đang có service ở `5432`.
+- `127.0.0.1`: địa chỉ nhìn từ phía VPS.
+- `5432`: port PostgreSQL đang publish trên VPS. Nếu `.env` trên VPS đổi `POSTGRES_PORT`, thay số này theo giá trị đó.
+- `-N`: không mở shell, chỉ giữ tunnel. Nếu bỏ `-N`, SSH sẽ vào shell bình thường nhưng tunnel vẫn chạy.
+
+Khi tunnel PostgreSQL đang mở, cấu hình DBeaver như sau:
+
+```text
+Host: localhost
+Port: 15432
+Database: giá trị POSTGRES_DB trong /opt/suumo-crawler/.env
+Username: giá trị POSTGRES_USER trong /opt/suumo-crawler/.env
+Password: giá trị POSTGRES_PASSWORD trong /opt/suumo-crawler/.env
+SSL: disable/default
+```
+
+Với `.env.release.example` mặc định thì là:
+
+```text
+Host: localhost
+Port: 15432
+Database: suumo_crawler
+Username: suumo_user
+Password: suumo_password_change_me
+```
+
+Xem thông tin MinIO trong `.env` trên VPS:
+
+```bash
+cd /opt/suumo-crawler
+grep -E '^(MINIO_ROOT_USER|MINIO_ROOT_PASSWORD)=' .env
+```
+
+Mở tunnel MinIO Console từ máy local:
+
+```bash
+ssh -N -L 19001:127.0.0.1:9001 thuevpsgiare
+```
+
+Sau đó mở trình duyệt trên máy local:
+
+```text
+http://localhost:19001
+```
+
+Đăng nhập bằng:
+
+```text
+Username: giá trị MINIO_ROOT_USER trong /opt/suumo-crawler/.env
+Password: giá trị MINIO_ROOT_PASSWORD trong /opt/suumo-crawler/.env
+```
+
+Nếu cần dùng cả MinIO API từ máy local, ví dụ tool S3 client, mở thêm port `9000`:
+
+```bash
+ssh -N -L 19001:127.0.0.1:9001 -L 19000:127.0.0.1:9000 thuevpsgiare
+```
+
+Khi đó cấu hình S3 client local:
+
+```text
+Endpoint: http://localhost:19000
+Access key: MINIO_ROOT_USER
+Secret key: MINIO_ROOT_PASSWORD
+Bucket: suumo
+Path style access: enabled
+SSL: disabled
+```
+
+Giữ terminal chạy lệnh SSH tunnel trong lúc dùng DBeaver hoặc MinIO UI. Khi muốn đóng kết nối, nhấn `Ctrl + C` trong terminal đó.
+
+## 12. Cài OpenVPN client trên host
 
 Cách B nghĩa là OpenVPN chạy trực tiếp trên VPS host. Cách này làm outbound traffic của VPS đi qua VPN Nhật, nhưng phải giữ route SSH riêng để không mất kết nối.
 
@@ -363,7 +481,7 @@ auth-user-pass /etc/openvpn/client/auth.txt
 
 OpenVPN sẽ đọc username/password từ file này thay vì hỏi interactive.
 
-## 12. Chuẩn bị route giữ SSH trước khi bật VPN
+## 13. Chuẩn bị route giữ SSH trước khi bật VPN
 
 Lấy IP client SSH hiện tại trên VPS:
 
@@ -432,7 +550,7 @@ Kỳ vọng:
 118.69.133.159 via 103.249.116.1 dev eth0 src 103.249.116.192
 ```
 
-## 13. Persist route SSH trong OpenVPN config
+## 14. Persist route SSH trong OpenVPN config
 
 Mở config:
 
@@ -450,7 +568,7 @@ route 118.69.133.159 255.255.255.255 net_gateway
 
 Nếu IP mạng nhà bạn đổi, phải cập nhật lại dòng này theo IP mới.
 
-## 14. Bật VPN với safety rollback
+## 15. Bật VPN với safety rollback
 
 Không dùng `enable --now` ngay lần đầu. Trước tiên tạo rollback tự tắt OpenVPN sau 2 phút:
 
@@ -508,7 +626,7 @@ systemctl enable openvpn-client@japan
 
 Không dùng `enable --now` trong lần đầu, vì `--now` vừa enable vừa start ngay, dễ tự khóa SSH nếu route chưa đúng.
 
-## 15. Chạy crawler khi VPN host đang bật
+## 16. Chạy crawler khi VPN host đang bật
 
 Khi host đã đi qua VPN, Docker container mặc định cũng đi outbound qua NAT của host, nên crawler thường sẽ đi qua VPN.
 
@@ -523,12 +641,202 @@ Nếu output là IP Nhật/VPN, crawler outbound đang đi qua VPN.
 Chạy crawler:
 
 ```bash
-make release-crawl-links
-make release-crawl-html
-make release-crawl-page
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
 ```
 
-## 16. Lệnh cứu khi VPN làm mất SSH
+## 17. Tự động chạy pipeline bằng systemd timer
+
+Nên dùng `systemd timer` thay vì cron vì dễ xem trạng thái, log, lần chạy kế tiếp, và có `Persistent=true` để chạy bù nếu VPS bị tắt đúng lịch.
+
+Trước hết test pipeline thủ công trong `/opt/suumo-crawler`:
+
+```bash
+cd /opt/suumo-crawler
+docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
+docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
+```
+
+Lệnh này chạy đủ thứ tự:
+
+```text
+bootstrap -> suumo_links -> suumo_html -> suumo_page
+```
+
+Nếu một bước lỗi, shell/systemd sẽ dừng và không chạy bước tiếp theo.
+
+Tạo service:
+
+```bash
+nano /etc/systemd/system/suumo-crawler-pipeline.service
+```
+
+Dán nội dung:
+
+```systemd
+[Unit]
+Description=Run SUUMO crawler release pipeline
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/suumo-crawler
+ExecStartPre=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
+ExecStartPre=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
+ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
+ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
+ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
+```
+
+Giải thích:
+
+- `Type=oneshot`: job chạy xong thì kết thúc, phù hợp crawler batch.
+- `WorkingDirectory=/opt/suumo-crawler`: nơi có `.env`, `docker-compose.release.yml`, và thư mục `tmp`.
+- `ExecStartPre=... up -d postgres minio`: đảm bảo PostgreSQL và MinIO đang chạy trước khi crawl.
+- `ExecStartPre=... crawler-init`: đảm bảo DB schema và MinIO bucket/prefix đã sẵn sàng.
+- Ba dòng `ExecStart`: chạy lần lượt `suumo-links`, `suumo-html`, rồi `suumo-page`. `Type=oneshot` cho phép nhiều dòng `ExecStart` chạy tuần tự.
+- `Requires=docker.service`: nếu Docker không chạy thì service không nên chạy.
+- `After=docker.service network-online.target`: đợi Docker và network sẵn sàng trước.
+
+Không đặt `docker compose pull` trong scheduled service. Nếu OpenVPN đang bật, VPS có thể không kết nối được Docker Hub registry và làm job fail trước khi crawl. Image nên được pull thủ công lúc deploy/update, sau đó job định kỳ chỉ chạy crawler bằng image đã có sẵn.
+
+Nếu muốn pipeline chỉ chạy khi host OpenVPN đã bật, có thể thêm vào phần `[Unit]`:
+
+```systemd
+Wants=openvpn-client@japan.service
+After=openvpn-client@japan.service
+```
+
+Không dùng `Requires=openvpn-client@japan.service` nếu bạn chưa chắc VPN luôn ổn, vì VPN lỗi sẽ làm pipeline không chạy.
+
+Tạo timer:
+
+```bash
+nano /etc/systemd/system/suumo-crawler-pipeline.timer
+```
+
+Trước khi chọn giờ chạy, kiểm tra timezone của VPS:
+
+```bash
+timedatectl
+```
+
+`OnCalendar` dùng timezone hiện tại của VPS. Nếu muốn `19:00` là giờ Việt Nam:
+
+```bash
+timedatectl set-timezone Asia/Ho_Chi_Minh
+```
+
+Nếu muốn `19:00` là giờ Nhật:
+
+```bash
+timedatectl set-timezone Asia/Tokyo
+```
+
+Nếu muốn chạy mỗi 2 ngày lúc 19:00, dùng:
+
+```systemd
+[Unit]
+Description=Run SUUMO crawler pipeline every 2 days at 19:00
+
+[Timer]
+OnCalendar=*-*-01/2 19:00:00
+Persistent=true
+Unit=suumo-crawler-pipeline.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Nếu muốn chạy mỗi 3 ngày lúc 19:00, đổi thành:
+
+```systemd
+OnCalendar=*-*-01/3 19:00:00
+```
+
+Nếu muốn chạy mỗi ngày lúc 19:00, đổi thành:
+
+```systemd
+OnCalendar=*-*-* 19:00:00
+```
+
+Giải thích:
+
+- `OnCalendar=*-*-01/2 19:00:00`: chạy lúc 19:00 các ngày 1, 3, 5, 7... trong tháng.
+- `OnCalendar=*-*-01/3 19:00:00`: chạy lúc 19:00 các ngày 1, 4, 7, 10... trong tháng.
+- `OnCalendar=*-*-* 19:00:00`: chạy mỗi ngày lúc 19:00.
+- `Persistent=true`: nếu VPS tắt đúng lúc tới lịch, lần boot tiếp theo systemd sẽ chạy bù.
+- `Unit=suumo-crawler-pipeline.service`: timer này kích hoạt service pipeline.
+
+Không dùng `OnBootSec` cho case này. Nếu VPS đã boot từ lâu rồi mới tạo timer, mốc boot có thể đã qua và timer có thể chạy ngay hoặc rất sớm. `OnCalendar` phù hợp hơn vì nó bám vào giờ cố định trong ngày.
+
+Preview lịch chạy tiếp theo:
+
+```bash
+systemd-analyze calendar '*-*-01/2 19:00:00'
+```
+
+Reload systemd:
+
+```bash
+systemctl daemon-reload
+```
+
+Lệnh này bắt systemd đọc lại file service/timer mới tạo.
+
+Bật timer:
+
+```bash
+systemctl enable --now suumo-crawler-pipeline.timer
+```
+
+`enable` giúp timer tự chạy sau reboot. `--now` start timer ngay, không chạy pipeline ngay lập tức trừ khi timer tới hạn.
+
+Kiểm tra lịch chạy:
+
+```bash
+systemctl list-timers suumo-crawler-pipeline.timer
+```
+
+Chạy thử service ngay lập tức:
+
+```bash
+systemctl start suumo-crawler-pipeline.service
+```
+
+Xem log lần chạy:
+
+```bash
+journalctl -u suumo-crawler-pipeline.service -f
+```
+
+Xem log các lần gần nhất:
+
+```bash
+journalctl -u suumo-crawler-pipeline.service -n 200 --no-pager
+```
+
+Kiểm tra trạng thái service:
+
+```bash
+systemctl status suumo-crawler-pipeline.service
+```
+
+Tắt lịch chạy tự động:
+
+```bash
+systemctl disable --now suumo-crawler-pipeline.timer
+```
+
+Lệnh này tắt timer, nhưng không xóa file service/timer.
+
+## 18. Lệnh cứu khi VPN làm mất SSH
 
 Nếu mất SSH, vào web console/VNC/serial console của nhà cung cấp VPS, rồi chạy:
 
@@ -555,7 +863,7 @@ curl -4 ifconfig.me
 
 Rồi SSH lại từ máy local.
 
-## 17. Cập nhật code/image sau này
+## 19. Cập nhật code/image sau này
 
 Trên máy local:
 
@@ -569,10 +877,20 @@ make docker-inspect-release tag=latest
 Trên VPS:
 
 ```bash
-cd /opt/japan_analysis
-git pull
-make release-pull
-make release-up
+cd /opt/suumo-crawler
+systemctl stop openvpn-client@japan
+docker compose --env-file .env -f docker-compose.release.yml --profile tasks --profile tools pull
+systemctl start openvpn-client@japan
+docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
+docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
 ```
 
-`git pull` lấy compose/docs/Makefile mới. `release-pull` lấy Docker image mới. `release-up` đảm bảo PostgreSQL, MinIO và bootstrap đang ở trạng thái sẵn sàng.
+`systemctl stop openvpn-client@japan` tạm tắt VPN để Docker Hub pull ổn định qua network public của VPS. Sau khi pull xong, `systemctl start openvpn-client@japan` bật lại VPN để crawler outbound đi qua Nhật.
+
+Lệnh `pull` lấy Docker image mới. Hai lệnh cuối đảm bảo PostgreSQL, MinIO và bootstrap đang ở trạng thái sẵn sàng.
+
+Nếu `docker-compose.release.yml` thay đổi trong GitHub, copy file mới từ máy local lên VPS:
+
+```bash
+scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml VPS_USER@VPS_HOST:/opt/suumo-crawler/
+```
