@@ -32,6 +32,9 @@ x-crawler-env: &crawler-env
 
 x-crawler-service: &crawler-service
   image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
+  mem_limit: ${CRAWLER_MEM_LIMIT:-512m}
+  cpus: "${CRAWLER_CPUS:-0.50}"
+  pids_limit: ${CRAWLER_PIDS_LIMIT:-256}
   environment:
     <<: *crawler-env
   volumes:
@@ -43,6 +46,9 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16.3-bookworm}
     restart: unless-stopped
+    mem_limit: ${POSTGRES_MEM_LIMIT:-384m}
+    cpus: "${POSTGRES_CPUS:-0.30}"
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
       POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
@@ -66,6 +72,9 @@ services:
   minio:
     image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-07-16T23-46-41Z}
     restart: unless-stopped
+    mem_limit: ${MINIO_MEM_LIMIT:-512m}
+    cpus: "${MINIO_CPUS:-0.30}"
+    pids_limit: ${MINIO_PIDS_LIMIT:-256}
     command: server /data --console-address ":9001"
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}

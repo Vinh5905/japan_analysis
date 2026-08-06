@@ -420,7 +420,209 @@ SSL: disabled
 
 Giữ terminal chạy lệnh SSH tunnel trong lúc dùng DBeaver hoặc MinIO UI. Khi muốn đóng kết nối, nhấn `Ctrl + C` trong terminal đó.
 
-## 12. Cài OpenVPN client trên host
+## 12. Cấu hình tài nguyên và theo dõi VPS
+
+VPS nhỏ `1 CPU / 2GB RAM` nên được cấu hình theo hướng giữ host ổn định trước. Crawler có thể fail và chạy lại, nhưng không nên để crawler kéo chết SSH, PostgreSQL, MinIO, hoặc OpenVPN.
+
+### Thêm swap 4GB
+
+Kiểm tra RAM/swap hiện tại:
+
+```bash
+free -h
+swapon --show
+```
+
+- `free -h`: xem RAM và swap của toàn VPS bằng đơn vị dễ đọc.
+- `swapon --show`: liệt kê các swap device/file đang bật. Nếu không có output nghĩa là chưa có swap.
+
+Nếu `Swap` đang là `0B`, tạo swap file 4GB:
+
+```bash
+fallocate -l 4G /swapfile
+```
+
+Lệnh này tạo file `/swapfile` dung lượng 4GB. Nếu VPS không hỗ trợ `fallocate`, dùng cách chậm hơn:
+
+```bash
+dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress
+```
+
+Set permission:
+
+```bash
+chmod 600 /swapfile
+```
+
+File swap có thể chứa dữ liệu memory, nên chỉ `root` được đọc/ghi.
+
+Format file thành swap:
+
+```bash
+mkswap /swapfile
+```
+
+Bật swap ngay:
+
+```bash
+swapon /swapfile
+```
+
+Cho swap tự bật lại sau reboot:
+
+```bash
+echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab
+```
+
+Kiểm tra lại:
+
+```bash
+free -h
+swapon --show
+```
+
+Kỳ vọng `Swap` có khoảng `4.0Gi`.
+
+Giảm xu hướng dùng swap quá sớm:
+
+```bash
+echo 'vm.swappiness=10' | tee /etc/sysctl.d/99-swappiness.conf
+sysctl --system
+```
+
+`vm.swappiness` là mức Linux sẵn sàng đẩy memory từ RAM sang swap. Thang giá trị là `0` tới `100`; số càng cao càng dễ swap sớm. Với VPS này dùng `10` để swap đóng vai trò bảo hiểm khi RAM căng, không phải memory chính.
+
+### Resource limit trong Docker Compose
+
+Release compose đang có các limit mặc định:
+
+```env
+POSTGRES_MEM_LIMIT=384m
+POSTGRES_CPUS=0.30
+POSTGRES_PIDS_LIMIT=256
+
+MINIO_MEM_LIMIT=512m
+MINIO_CPUS=0.30
+MINIO_PIDS_LIMIT=256
+
+CRAWLER_MEM_LIMIT=512m
+CRAWLER_CPUS=0.50
+CRAWLER_PIDS_LIMIT=256
+```
+
+Ý nghĩa:
+
+- `mem_limit`: RAM tối đa container được dùng. Nếu container vượt quá nhiều, container đó sẽ bị kill trước thay vì kéo cả VPS xuống.
+- `cpus`: phần CPU tối đa container được dùng. VPS 1 CPU nên giới hạn để một container không ăn toàn bộ CPU.
+- `pids_limit`: giới hạn số process/thread trong container, tránh lỗi sinh process quá nhiều.
+
+Các giá trị này nằm trong `.env`, nên có thể chỉnh trên VPS bằng:
+
+```bash
+cd /opt/suumo-crawler
+nano .env
+```
+
+Starting point cho VPS `1 CPU / 2GB RAM`:
+
+```text
+PostgreSQL: 384m RAM, 0.30 CPU
+MinIO:      512m RAM, 0.30 CPU
+Crawler:    512m RAM, 0.50 CPU
+```
+
+Nếu crawler bị exit `137` hoặc kernel log có OOM kill process `python`, tăng:
+
+```env
+CRAWLER_MEM_LIMIT=768m
+```
+
+Nếu MinIO lỗi upload hoặc bị restart, tăng:
+
+```env
+MINIO_MEM_LIMIT=768m
+```
+
+Nếu PostgreSQL healthcheck fail hoặc connection timeout nhưng host vẫn ổn, tăng:
+
+```env
+POSTGRES_MEM_LIMIT=512m
+```
+
+Sau khi đổi resource limit trong `.env` hoặc đổi `docker-compose.release.yml`, recreate service nền:
+
+```bash
+cd /opt/suumo-crawler
+docker compose --env-file .env -f docker-compose.release.yml up -d --force-recreate postgres minio
+```
+
+Lệnh này recreate container `postgres` và `minio` để nhận config mới, nhưng không xóa volume nên data vẫn còn.
+
+Crawler one-shot như `suumo-links`, `suumo-html`, `suumo-page` sẽ nhận limit mới ở lần chạy tiếp theo:
+
+```bash
+docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
+```
+
+`--rm` chỉ áp dụng cho container one-shot: chạy xong thì xóa container job. Không dùng `--rm` với `up -d postgres minio`.
+
+### Theo dõi tài nguyên
+
+Xem tài nguyên từng Docker container:
+
+```bash
+docker stats --no-stream
+```
+
+- `CPU %`: container đang dùng bao nhiêu CPU.
+- `MEM USAGE / LIMIT`: RAM đang dùng so với limit.
+- `MEM %`: phần trăm RAM container đang dùng trên limit.
+- `NET I/O`: network in/out.
+- `BLOCK I/O`: disk read/write.
+
+`--no-stream` in một lần rồi thoát. Bỏ `--no-stream` nếu muốn xem realtime.
+
+Xem RAM/swap toàn VPS:
+
+```bash
+free -h
+```
+
+Quan trọng nhất:
+
+- `available`: RAM còn có thể cấp cho app.
+- `Swap used`: swap đang được dùng bao nhiêu.
+
+Nếu `available` thấp và `Swap used` tăng liên tục, VPS đang áp lực RAM. Nếu swap tăng vài GB và máy chậm, workload đã vượt cấu hình VPS.
+
+Kiểm tra kernel có từng OOM kill process không:
+
+```bash
+dmesg -T | grep -i -E 'oom|killed process|out of memory'
+```
+
+Nếu có dòng như `Out of memory` hoặc `Killed process ... (python)`, kernel đã giết process vì thiếu RAM. Nếu kill `python` thì crawler bị giết; nếu kill `minio` hoặc `postgres`, có thể gây lỗi upload hoặc DB timeout.
+
+Xem trạng thái container:
+
+```bash
+cd /opt/suumo-crawler
+docker compose --env-file .env -f docker-compose.release.yml ps
+```
+
+Xem log pipeline:
+
+```bash
+journalctl -u suumo-crawler-pipeline.service -n 200 --no-pager
+```
+
+Xem log MinIO khi có lỗi upload:
+
+```bash
+docker logs suumo_crawler_release-minio-1 --tail 200
+```
+
+## 13. Cài OpenVPN client trên host
 
 Cách B nghĩa là OpenVPN chạy trực tiếp trên VPS host. Cách này làm outbound traffic của VPS đi qua VPN Nhật, nhưng phải giữ route SSH riêng để không mất kết nối.
 
@@ -481,7 +683,7 @@ auth-user-pass /etc/openvpn/client/auth.txt
 
 OpenVPN sẽ đọc username/password từ file này thay vì hỏi interactive.
 
-## 13. Chuẩn bị route giữ SSH trước khi bật VPN
+## 14. Chuẩn bị route giữ SSH trước khi bật VPN
 
 Lấy IP client SSH hiện tại trên VPS:
 
@@ -550,7 +752,7 @@ Kỳ vọng:
 118.69.133.159 via 103.249.116.1 dev eth0 src 103.249.116.192
 ```
 
-## 14. Persist route SSH trong OpenVPN config
+## 15. Persist route SSH trong OpenVPN config
 
 Mở config:
 
@@ -568,7 +770,7 @@ route 118.69.133.159 255.255.255.255 net_gateway
 
 Nếu IP mạng nhà bạn đổi, phải cập nhật lại dòng này theo IP mới.
 
-## 15. Bật VPN với safety rollback
+## 16. Bật VPN với safety rollback
 
 Không dùng `enable --now` ngay lần đầu. Trước tiên tạo rollback tự tắt OpenVPN sau 2 phút:
 
@@ -626,7 +828,7 @@ systemctl enable openvpn-client@japan
 
 Không dùng `enable --now` trong lần đầu, vì `--now` vừa enable vừa start ngay, dễ tự khóa SSH nếu route chưa đúng.
 
-## 16. Chạy crawler khi VPN host đang bật
+## 17. Chạy crawler khi VPN host đang bật
 
 Khi host đã đi qua VPN, Docker container mặc định cũng đi outbound qua NAT của host, nên crawler thường sẽ đi qua VPN.
 
@@ -646,7 +848,7 @@ docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
 docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
 ```
 
-## 17. Tự động chạy pipeline bằng systemd timer
+## 18. Tự động chạy pipeline bằng systemd timer
 
 Nên dùng `systemd timer` thay vì cron vì dễ xem trạng thái, log, lần chạy kế tiếp, và có `Persistent=true` để chạy bù nếu VPS bị tắt đúng lịch.
 
@@ -836,7 +1038,7 @@ systemctl disable --now suumo-crawler-pipeline.timer
 
 Lệnh này tắt timer, nhưng không xóa file service/timer.
 
-## 18. Lệnh cứu khi VPN làm mất SSH
+## 19. Lệnh cứu khi VPN làm mất SSH
 
 Nếu mất SSH, vào web console/VNC/serial console của nhà cung cấp VPS, rồi chạy:
 
@@ -863,7 +1065,7 @@ curl -4 ifconfig.me
 
 Rồi SSH lại từ máy local.
 
-## 19. Cập nhật code/image sau này
+## 20. Cập nhật code/image sau này
 
 Trên máy local:
 
@@ -881,16 +1083,27 @@ cd /opt/suumo-crawler
 systemctl stop openvpn-client@japan
 docker compose --env-file .env -f docker-compose.release.yml --profile tasks --profile tools pull
 systemctl start openvpn-client@japan
-docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
-docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
 ```
 
 `systemctl stop openvpn-client@japan` tạm tắt VPN để Docker Hub pull ổn định qua network public của VPS. Sau khi pull xong, `systemctl start openvpn-client@japan` bật lại VPN để crawler outbound đi qua Nhật.
 
-Lệnh `pull` lấy Docker image mới. Hai lệnh cuối đảm bảo PostgreSQL, MinIO và bootstrap đang ở trạng thái sẵn sàng.
+Lệnh `pull` lấy Docker image mới. Nếu chỉ sửa Python crawler code hoặc Scrapy settings trong image, lần chạy one-shot tiếp theo như `suumo-html` sẽ dùng image mới đã pull.
 
 Nếu `docker-compose.release.yml` thay đổi trong GitHub, copy file mới từ máy local lên VPS:
 
 ```bash
 scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml VPS_USER@VPS_HOST:/opt/suumo-crawler/
+```
+
+Nếu thay đổi compose config cho service chạy nền, ví dụ `mem_limit`, `cpus`, `pids_limit`, recreate PostgreSQL và MinIO:
+
+```bash
+cd /opt/suumo-crawler
+docker compose --env-file .env -f docker-compose.release.yml up -d --force-recreate postgres minio
+```
+
+Không cần chạy `crawler-init` cho mỗi lần update. Chỉ chạy lại khi setup VPS lần đầu, DB/MinIO volume mới hoặc rỗng, vừa xóa volume, hoặc vừa thay đổi logic bootstrap/schema init:
+
+```bash
+docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
 ```
