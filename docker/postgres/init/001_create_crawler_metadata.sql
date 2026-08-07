@@ -137,8 +137,6 @@ CREATE TABLE load_batches (
     file_hash TEXT NOT NULL CHECK (file_hash ~ '^[a-f0-9]{64}$'),
     status load_batch_status_enum NOT NULL DEFAULT 'pending',
     inserted_count INTEGER NOT NULL DEFAULT 0 CHECK (inserted_count >= 0),
-    updated_count INTEGER NOT NULL DEFAULT 0 CHECK (updated_count >= 0),
-    skipped_count INTEGER NOT NULL DEFAULT 0 CHECK (skipped_count >= 0),
     failed_count INTEGER NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

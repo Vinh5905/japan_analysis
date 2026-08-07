@@ -1,5 +1,7 @@
 # Local environment
 .env.local
+.env.pipeline
+.env.release
 .env.*.local
 *.env.local
 
@@ -23,6 +25,11 @@ logs/
 tmp/
 vpn_config/
 *.log
+
+# dbt generated artifacts
+analytics/dbt/target/
+analytics/dbt/dbt_packages/
+analytics/dbt/logs/
 
 # OS and editor files
 .DS_Store

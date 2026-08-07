@@ -6,6 +6,9 @@ MIGRATIONS_DIR := docker/postgres/migrations
 RELEASE_COMPOSE := docker-compose.release.yml
 RELEASE_ENV_FILE ?= .env
 RELEASE_COMPOSE_CMD := $(COMPOSE) --env-file $(RELEASE_ENV_FILE) -f $(RELEASE_COMPOSE)
+PIPELINE_COMPOSE := docker-compose.pipeline.yml
+PIPELINE_ENV_FILE ?= .env.pipeline
+PIPELINE_COMPOSE_CMD := $(COMPOSE) --env-file $(PIPELINE_ENV_FILE) -f $(PIPELINE_COMPOSE)
 DOCKERHUB_IMAGE ?= kevinpham9257/suumo-crawler
 tag ?= latest
 PLATFORMS ?= linux/amd64,linux/arm64
@@ -28,7 +31,8 @@ help: ## Show available root commands
 	@printf "  make db-migrate-all\n"
 	@printf "  make docker-build-push-release tag=latest\n"
 	@printf "  make release-up\n"
-	@printf "  make release-crawl-links\n\n"
+	@printf "  make release-crawl-links\n"
+	@printf "  make pipeline-up-d\n\n"
 
 .PHONY: infra-config
 infra-config: ## Validate and render the shared infrastructure compose config
@@ -175,3 +179,43 @@ release-shell: release-up ## Open a shell inside the release crawler image
 .PHONY: release-db-migrate-all
 release-db-migrate-all: release-up ## Run bundled SQL migrations from the release crawler image
 	$(RELEASE_COMPOSE_CMD) run --rm crawler-init crawler-init --skip-minio --run-migrations
+
+.PHONY: pipeline-config
+pipeline-config: ## Validate and render Airflow/dbt pipeline compose config
+	$(PIPELINE_COMPOSE_CMD) --profile tools config
+
+.PHONY: pipeline-build
+pipeline-build: ## Build the local Airflow image with dbt and loader dependencies
+	$(PIPELINE_COMPOSE_CMD) build
+
+.PHONY: pipeline-up-d
+pipeline-up-d: ## Start warehouse Postgres, Airflow webserver, and scheduler
+	$(PIPELINE_COMPOSE_CMD) up -d warehouse-postgres warehouse-init airflow-init airflow-webserver airflow-scheduler
+
+.PHONY: pipeline-ps
+pipeline-ps: ## Show Airflow/dbt pipeline service status
+	$(PIPELINE_COMPOSE_CMD) ps
+
+.PHONY: pipeline-logs
+pipeline-logs: ## Follow pipeline logs, optionally pass service=airflow-scheduler
+	$(PIPELINE_COMPOSE_CMD) logs -f $(service)
+
+.PHONY: pipeline-down
+pipeline-down: ## Stop Airflow/dbt pipeline containers, keep warehouse volume
+	$(PIPELINE_COMPOSE_CMD) down --remove-orphans
+
+.PHONY: pipeline-clean-volumes
+pipeline-clean-volumes: ## Stop pipeline containers and delete warehouse/Airflow metadata volume
+	$(PIPELINE_COMPOSE_CMD) down --volumes --remove-orphans
+
+.PHONY: pipeline-dbt-debug
+pipeline-dbt-debug: ## Run dbt debug against warehouse
+	$(PIPELINE_COMPOSE_CMD) run --rm dbt-runner dbt debug
+
+.PHONY: pipeline-dbt-run
+pipeline-dbt-run: ## Run dbt models against warehouse
+	$(PIPELINE_COMPOSE_CMD) run --rm dbt-runner dbt run
+
+.PHONY: pipeline-dbt-test
+pipeline-dbt-test: ## Run dbt tests against warehouse
+	$(PIPELINE_COMPOSE_CMD) run --rm dbt-runner dbt test

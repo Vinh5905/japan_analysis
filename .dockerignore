@@ -12,6 +12,9 @@ tmp/
 logs/
 data/
 *.log
+analytics/dbt/target/
+analytics/dbt/dbt_packages/
+analytics/dbt/logs/
 
 # Python cache, virtualenvs, and test/build output.
 __pycache__/

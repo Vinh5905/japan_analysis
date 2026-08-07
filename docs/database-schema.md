@@ -262,6 +262,9 @@ mọi `task_id` xuất hiện trong JSON array đó phải được cập nhật
 `crawl_tasks.batch_id = load_batches.batch_id`. Hiện tại task được chuyển từ
 `pending` sang `success` khi parser record đã nằm trong batch; kết quả validation
 chi tiết nằm trong `is_valid`, `error_type`, và `error_message` của JSON record.
+Warehouse loader chỉ ghi các parser record có `is_valid = true` vào raw
+warehouse. Parser record có `is_valid = false` không được insert vào warehouse và
+được tính vào `load_batches.failed_count`.
 
 Ảnh lưu theo format:
 
@@ -286,15 +289,18 @@ loader ghi dữ liệu vào bảng đích.
 | `row_count` | `INTEGER` | Số row parser record trong batch file. |
 | `file_hash` | `TEXT` | SHA-256 của bytes file cuối cùng được upload lên MinIO, sau nén nếu có `compression`. |
 | `status` | `load_batch_status_enum` | Trạng thái load batch. |
-| `inserted_count` | `INTEGER` | Số row được insert mới. |
-| `updated_count` | `INTEGER` | Số row update khi loader gặp record đích đã tồn tại nhưng dữ liệu thay đổi. |
-| `skipped_count` | `INTEGER` | Số row bỏ qua vì `data_hash` giống hệt dữ liệu đã có. |
-| `failed_count` | `INTEGER` | Số row lỗi không load được. |
+| `inserted_count` | `INTEGER` | Số parser record hợp lệ đã được ghi thành công vào warehouse. Chỉ tính record có `is_valid = true`. |
+| `failed_count` | `INTEGER` | Số parser record không được ghi vào warehouse, gồm record `is_valid = false` hoặc lỗi ghi từng row. |
 | `error_message` | `TEXT` | Nội dung lỗi batch nếu load thất bại. |
 | `created_at` | `TIMESTAMPTZ` | Thời điểm file batch đã được tạo, nén, upload lên MinIO, và metadata được ghi DB. |
 | `started_loading_at` | `TIMESTAMPTZ` | Thời điểm loader bắt đầu load batch. |
 | `finished_loading_at` | `TIMESTAMPTZ` | Thời điểm loader kết thúc, kể cả khi failed. |
 | `loaded_at` | `TIMESTAMPTZ` | Thời điểm load thành công. Null nếu failed. |
+
+`failed_count > 0` là lỗi cấp record và batch vẫn có thể `status = 'success'`
+nếu loader đọc file và xử lý batch hoàn tất. `status = 'failed'` chỉ dùng cho
+lỗi cấp batch như không tải/giải nén/parse được file hoặc lỗi hệ thống khiến
+batch không hoàn tất.
 
 Batch file lưu theo format:
 

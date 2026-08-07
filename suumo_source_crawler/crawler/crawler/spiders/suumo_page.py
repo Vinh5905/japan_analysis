@@ -8,6 +8,10 @@ import scrapy
 from scrapy import signals
 from scrapy.http import TextResponse
 
+from crawler.airflow_notify import (
+    load_airflow_notify_config,
+    notify_airflow_batch_ready,
+)
 from crawler.metadata_db import CrawlerMetadataRepository, PendingParseTask
 from crawler.object_storage import create_minio_client, load_minio_config, split_storage_path
 from crawler.storage import (
@@ -75,6 +79,7 @@ class SuumoPageSpider(scrapy.Spider):
         self.metadata_repository: CrawlerMetadataRepository | None = None
         self.minio_config = load_minio_config()
         self.minio_client = create_minio_client(self.minio_config)
+        self.airflow_notify_config = load_airflow_notify_config()
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -356,8 +361,9 @@ class SuumoPageSpider(scrapy.Spider):
         self.batch_records.clear()
         self.batch_started_at = None
 
-        return {
+        result = {
             "batch_id": batch_id,
+            "source_id": self.source_id,
             "file_path": stored_object.target.storage_path,
             "object_name": stored_object.target.object_name,
             "file_format": "json",
@@ -369,6 +375,25 @@ class SuumoPageSpider(scrapy.Spider):
             "reason": reason,
             "status": "pending",
         }
+        try:
+            result["airflow_notify"] = notify_airflow_batch_ready(
+                self.airflow_notify_config,
+                result,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Airflow notification failed for batch_id=%s: %s",
+                batch_id,
+                exc,
+            )
+            result["airflow_notify"] = {
+                "enabled": self.airflow_notify_config.enabled,
+                "notified": False,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+
+        return result
 
     def extract_table_data(self, table_selector) -> dict[str, str]:
         """Convert a two-column SUUMO table into key-value text data."""

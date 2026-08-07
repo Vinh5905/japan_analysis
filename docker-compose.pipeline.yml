@@ -1,0 +1,183 @@
+name: ${PIPELINE_COMPOSE_PROJECT_NAME:-japan_analysis_pipeline}
+
+# Pipeline compose is intentionally separate from source crawling. It reads
+# source metadata/MinIO through SOURCE_DOCKER_NETWORK and writes to a dedicated
+# warehouse Postgres container.
+
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PIPELINE_POSTGRES_USER:-pipeline_admin}:${PIPELINE_POSTGRES_PASSWORD:-pipeline_password_change_me}@warehouse-postgres:5432/${AIRFLOW_DB:-airflow_metadata}
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-pipeline_airflow_secret_change_me}
+  AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+  AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin_change_me}
+  AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Data}
+  AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Admin}
+  AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
+  PYTHONPATH: /opt/airflow/pipeline
+  SOURCE_POSTGRES_HOST: ${SOURCE_POSTGRES_HOST:-postgres}
+  SOURCE_POSTGRES_PORT: ${SOURCE_POSTGRES_PORT:-5432}
+  SOURCE_POSTGRES_DB: ${SOURCE_POSTGRES_DB:-suumo_crawler}
+  SOURCE_POSTGRES_USER: ${SOURCE_POSTGRES_USER:-suumo_user}
+  SOURCE_POSTGRES_PASSWORD: ${SOURCE_POSTGRES_PASSWORD:-suumo_password_change_me}
+  SOURCE_MINIO_ENDPOINT_URL: ${SOURCE_MINIO_ENDPOINT_URL:-http://minio:9000}
+  SOURCE_MINIO_ROOT_USER: ${SOURCE_MINIO_ROOT_USER:-minioadmin}
+  SOURCE_MINIO_ROOT_PASSWORD: ${SOURCE_MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+  WAREHOUSE_POSTGRES_HOST: warehouse-postgres
+  WAREHOUSE_POSTGRES_PORT: 5432
+  WAREHOUSE_DB: ${WAREHOUSE_DB:-japan_warehouse}
+  PIPELINE_POSTGRES_USER: ${PIPELINE_POSTGRES_USER:-pipeline_admin}
+  PIPELINE_POSTGRES_PASSWORD: ${PIPELINE_POSTGRES_PASSWORD:-pipeline_password_change_me}
+  DBT_PROJECT_DIR: /opt/airflow/dbt
+  DBT_PROFILES_DIR: /opt/airflow/dbt
+  SUUMO_LOAD_DAG_SCHEDULE: ${SUUMO_LOAD_DAG_SCHEDULE:-0 */3 * * *}
+  SUUMO_LOAD_BATCH_LIMIT: ${SUUMO_LOAD_BATCH_LIMIT:-20}
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: pipeline/airflow/Dockerfile
+    args:
+      AIRFLOW_BASE_IMAGE: ${AIRFLOW_BASE_IMAGE:-apache/airflow:2.10.5-python3.12}
+      AIRFLOW_VERSION: ${AIRFLOW_VERSION:-2.10.5}
+      PYTHON_VERSION: ${AIRFLOW_PYTHON_VERSION:-3.12}
+  image: ${PIPELINE_AIRFLOW_IMAGE:-japan-analysis-airflow:local}
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment:
+    <<: *airflow-env
+  volumes:
+    - ./pipeline/airflow/dags:/opt/airflow/dags
+    - ./pipeline/airflow/logs:/opt/airflow/logs
+    - ./pipeline/airflow/plugins:/opt/airflow/plugins
+    - ./pipeline:/opt/airflow/pipeline
+    - ./analytics/dbt:/opt/airflow/dbt
+  networks:
+    - pipeline_net
+    - source_net
+
+services:
+  warehouse-postgres:
+    image: ${PIPELINE_POSTGRES_IMAGE:-postgres:16.3-bookworm}
+    restart: unless-stopped
+    mem_limit: ${PIPELINE_POSTGRES_MEM_LIMIT:-512m}
+    cpus: "${PIPELINE_POSTGRES_CPUS:-0.40}"
+    pids_limit: ${PIPELINE_POSTGRES_PIDS_LIMIT:-256}
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      POSTGRES_DB: ${AIRFLOW_DB:-airflow_metadata}
+      POSTGRES_USER: ${PIPELINE_POSTGRES_USER:-pipeline_admin}
+      POSTGRES_PASSWORD: ${PIPELINE_POSTGRES_PASSWORD:-pipeline_password_change_me}
+      POSTGRES_INITDB_ARGS: ${PIPELINE_POSTGRES_INITDB_ARGS:---encoding=UTF8 --locale=C}
+      PGDATA: ${PIPELINE_PGDATA:-/var/lib/postgresql/data/pgdata}
+    ports:
+      - "${WAREHOUSE_POSTGRES_HOST_PORT:-15433}:5432"
+    volumes:
+      - pipeline_postgres_data:/var/lib/postgresql/data
+    networks:
+      - pipeline_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  warehouse-init:
+    image: ${PIPELINE_POSTGRES_IMAGE:-postgres:16.3-bookworm}
+    depends_on:
+      warehouse-postgres:
+        condition: service_healthy
+    environment:
+      WAREHOUSE_POSTGRES_HOST: warehouse-postgres
+      WAREHOUSE_POSTGRES_PORT: 5432
+      PIPELINE_POSTGRES_USER: ${PIPELINE_POSTGRES_USER:-pipeline_admin}
+      PIPELINE_POSTGRES_PASSWORD: ${PIPELINE_POSTGRES_PASSWORD:-pipeline_password_change_me}
+      AIRFLOW_DB: ${AIRFLOW_DB:-airflow_metadata}
+      WAREHOUSE_DB: ${WAREHOUSE_DB:-japan_warehouse}
+    volumes:
+      - ./pipeline/warehouse/init_warehouse.sh:/scripts/init_warehouse.sh:ro
+    networks:
+      - pipeline_net
+    entrypoint: ["/bin/sh", "/scripts/init_warehouse.sh"]
+    restart: "no"
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      warehouse-postgres:
+        condition: service_healthy
+      warehouse-init:
+        condition: service_completed_successfully
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        airflow db migrate
+        airflow users create \
+          --username "$${AIRFLOW_ADMIN_USERNAME}" \
+          --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname "$${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "$${AIRFLOW_ADMIN_LASTNAME}" \
+          --role Admin \
+          --email "$${AIRFLOW_ADMIN_EMAIL}" || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT:-8080}:8080"
+    restart: unless-stopped
+    mem_limit: ${AIRFLOW_WEBSERVER_MEM_LIMIT:-512m}
+    cpus: "${AIRFLOW_WEBSERVER_CPUS:-0.50}"
+    pids_limit: ${AIRFLOW_WEBSERVER_PIDS_LIMIT:-512}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: ${AIRFLOW_SCHEDULER_MEM_LIMIT:-512m}
+    cpus: "${AIRFLOW_SCHEDULER_CPUS:-0.50}"
+    pids_limit: ${AIRFLOW_SCHEDULER_PIDS_LIMIT:-512}
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  dbt-runner:
+    <<: *airflow-common
+    command: dbt --version
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    profiles: ["tools"]
+    restart: "no"
+
+volumes:
+  pipeline_postgres_data:
+    driver: local
+
+networks:
+  pipeline_net:
+    driver: bridge
+  source_net:
+    name: ${SOURCE_DOCKER_NETWORK:-crawler_shared_net}
+    external: true

@@ -1,0 +1,21 @@
+name: japan_analysis
+version: "1.0.0"
+config-version: 2
+
+profile: japan_analysis
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  japan_analysis:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table

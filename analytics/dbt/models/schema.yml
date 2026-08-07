@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_suumo_rentals
+    columns:
+      - name: task_id
+        tests:
+          - not_null
+          - unique
+      - name: data_hash
+        tests:
+          - not_null
+
+  - name: mart_suumo_rentals_current
+    columns:
+      - name: task_id
+        tests:
+          - not_null
+          - unique
+      - name: data_hash
+        tests:
+          - not_null

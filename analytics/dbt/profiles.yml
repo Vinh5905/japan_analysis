@@ -1,0 +1,12 @@
+japan_analysis:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_POSTGRES_HOST', 'warehouse-postgres') }}"
+      port: "{{ env_var('WAREHOUSE_POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('PIPELINE_POSTGRES_USER', 'pipeline_admin') }}"
+      password: "{{ env_var('PIPELINE_POSTGRES_PASSWORD', 'pipeline_password_change_me') }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'japan_warehouse') }}"
+      schema: public
+      threads: 2

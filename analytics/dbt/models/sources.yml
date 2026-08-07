@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: warehouse_raw
+    schema: raw
+    tables:
+      - name: suumo_parser_records
+        columns:
+          - name: task_id
+            tests:
+              - not_null
+              - unique
+          - name: batch_id
+            tests:
+              - not_null
+          - name: data_hash
+            tests:
+              - not_null
