@@ -4,6 +4,9 @@ Tài liệu này mô tả pipeline sau crawler: Airflow chỉ load JSON batch đ
 từ MinIO vào warehouse Postgres, rồi chạy dbt. Airflow không chạy
 `suumo_links`, `suumo_html`, hoặc `suumo_page`.
 
+Toàn bộ Docker Compose, env mẫu và Makefile vận hành pipeline nằm trong
+`pipeline/`; root Makefile không còn target pipeline.
+
 ## Kiến trúc
 
 Source stack hiện tại vẫn giữ nguyên:
@@ -33,8 +36,8 @@ warehouse có hai database:
 Copy env mẫu:
 
 ```bash
-cp .env.pipeline.example .env.pipeline
-nano .env.pipeline
+cp pipeline/.env.example pipeline/.env
+nano pipeline/.env
 ```
 
 Các giá trị quan trọng:
@@ -42,9 +45,9 @@ Các giá trị quan trọng:
 ```env
 SOURCE_DOCKER_NETWORK=crawler_shared_net
 SOURCE_POSTGRES_HOST=postgres
-SOURCE_POSTGRES_DB=suumo_crawler
-SOURCE_POSTGRES_USER=suumo_user
-SOURCE_POSTGRES_PASSWORD=suumo_password_change_me
+SOURCE_POSTGRES_DB=japan_analysis
+SOURCE_POSTGRES_USER=japan_analysis_user
+SOURCE_POSTGRES_PASSWORD=japan_analysis_password_change_me
 SOURCE_MINIO_ENDPOINT_URL=http://minio:9000
 SOURCE_MINIO_ROOT_USER=minioadmin
 SOURCE_MINIO_ROOT_PASSWORD=minioadmin_change_me
@@ -58,9 +61,15 @@ SUUMO_LOAD_DAG_SCHEDULE=0 */3 * * *
 SUUMO_LOAD_BATCH_LIMIT=20
 ```
 
-Nếu chạy local với root `.env` hiện tại, source DB có thể là `japan_analysis`.
-Nếu chạy trên VPS release, source DB thường là `suumo_crawler`. Cần chỉnh
-`SOURCE_POSTGRES_DB` đúng với source DB thật.
+`AIRFLOW_PYTHON_VERSION` nên để dạng major.minor như `3.12`. Nếu máy/base image
+trả ra patch version như `3.12.9`, Dockerfile sẽ tự normalize về `3.12` khi tải
+Airflow constraints.
+
+Nếu chạy local, các biến `SOURCE_POSTGRES_DB`, `SOURCE_POSTGRES_USER`,
+`SOURCE_POSTGRES_PASSWORD` phải khớp với `POSTGRES_DB`, `POSTGRES_USER`,
+`POSTGRES_PASSWORD` trong root `.env`. Nếu chạy trên VPS release, source DB
+thường là `suumo_crawler`, user thường là `suumo_user`; cần chỉnh theo `.env`
+thật trên VPS.
 
 Nếu pipeline chạy cạnh release compose trên VPS, source network thường là:
 
@@ -85,20 +94,37 @@ make infra-up-d
 Validate compose:
 
 ```bash
-make pipeline-config
+make -C pipeline config
+```
+
+Kiểm tra Airflow container có đăng nhập được source Postgres không:
+
+```bash
+make -C pipeline check-source-db
+```
+
+Nếu lỗi `password authentication failed`, sửa `SOURCE_POSTGRES_*` trong
+`pipeline/.env` cho khớp source `.env`, rồi recreate Airflow service:
+
+```bash
+make -C pipeline recreate
 ```
 
 Build Airflow image có dbt:
 
 ```bash
-make pipeline-build
+make -C pipeline build
 ```
 
 Start warehouse Postgres và Airflow:
 
 ```bash
-make pipeline-up-d
+make -C pipeline up-d
 ```
+
+`up-d` trong `pipeline/Makefile` phụ thuộc `build`, nên chạy `up-d` cũng sẽ
+build image Airflow trước. Lệnh `build` riêng vẫn hữu ích khi muốn kiểm tra lỗi
+cài dependency trước khi start service.
 
 Mở Airflow UI:
 
@@ -107,7 +133,7 @@ http://localhost:8080
 ```
 
 Đăng nhập bằng `AIRFLOW_ADMIN_USERNAME` và `AIRFLOW_ADMIN_PASSWORD` trong
-`.env.pipeline`.
+`pipeline/.env`.
 
 ## Event notify từ crawler
 
@@ -149,6 +175,10 @@ dbt project nằm ở:
 analytics/dbt
 ```
 
+dbt được cài trong virtualenv riêng `/opt/airflow/dbt_venv` bên trong Airflow
+image để tránh conflict dependency với Airflow. Dockerfile thêm virtualenv này
+vào `PATH`, nên trong container vẫn gọi được lệnh `dbt` trực tiếp.
+
 Các model v1:
 
 - `raw.suumo_parser_records`: table do loader tạo và ghi dữ liệu JSONB.
@@ -163,9 +193,9 @@ Các model v1:
 Chạy thủ công:
 
 ```bash
-make pipeline-dbt-debug
-make pipeline-dbt-run
-make pipeline-dbt-test
+make -C pipeline dbt-debug
+make -C pipeline dbt-run
+make -C pipeline dbt-test
 ```
 
 ## Lệnh vận hành
@@ -173,26 +203,26 @@ make pipeline-dbt-test
 Xem trạng thái:
 
 ```bash
-make pipeline-ps
+make -C pipeline ps
 ```
 
 Xem log:
 
 ```bash
-make pipeline-logs
-make pipeline-logs service=airflow-scheduler
+make -C pipeline logs
+make -C pipeline logs service=airflow-scheduler
 ```
 
 Stop pipeline, giữ volume:
 
 ```bash
-make pipeline-down
+make -C pipeline down
 ```
 
 Xóa cả warehouse/Airflow metadata volume:
 
 ```bash
-make pipeline-clean-volumes
+make -C pipeline clean-volumes
 ```
 
 ## Kiểm tra kết quả

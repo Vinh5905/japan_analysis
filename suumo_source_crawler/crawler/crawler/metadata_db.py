@@ -19,6 +19,8 @@ class PostgresConfig:
     dbname: str
     user: str
     password: str
+    connect_timeout: int
+    sslmode: str
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,8 @@ def load_postgres_config() -> PostgresConfig:
         dbname=os.getenv("POSTGRES_DB", "japan_analysis"),
         user=os.getenv("POSTGRES_USER", "japan_analysis_user"),
         password=os.getenv("POSTGRES_PASSWORD", "japan_analysis_password_change_me"),
+        connect_timeout=int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "10")),
+        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer"),
     )
 
 
@@ -108,6 +112,8 @@ def connect_postgres(config: PostgresConfig | None = None) -> Connection:
         dbname=config.dbname,
         user=config.user,
         password=config.password,
+        connect_timeout=config.connect_timeout,
+        sslmode=config.sslmode,
         autocommit=True,
         row_factory=tuple_row,
     )

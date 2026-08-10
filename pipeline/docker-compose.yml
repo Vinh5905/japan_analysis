@@ -1,7 +1,7 @@
 name: ${PIPELINE_COMPOSE_PROJECT_NAME:-japan_analysis_pipeline}
 
-# Pipeline compose is intentionally separate from source crawling. It reads
-# source metadata/MinIO through SOURCE_DOCKER_NETWORK and writes to a dedicated
+# This compose file belongs to the pipeline folder. It reads source
+# metadata/MinIO through SOURCE_DOCKER_NETWORK and writes to a dedicated
 # warehouse Postgres container.
 
 x-airflow-env: &airflow-env
@@ -36,29 +36,49 @@ x-airflow-env: &airflow-env
   SUUMO_LOAD_DAG_SCHEDULE: ${SUUMO_LOAD_DAG_SCHEDULE:-0 */3 * * *}
   SUUMO_LOAD_BATCH_LIMIT: ${SUUMO_LOAD_BATCH_LIMIT:-20}
 
-x-airflow-common: &airflow-common
+x-airflow-build: &airflow-build
   build:
-    context: .
+    context: ..
     dockerfile: pipeline/airflow/Dockerfile
     args:
       AIRFLOW_BASE_IMAGE: ${AIRFLOW_BASE_IMAGE:-apache/airflow:2.10.5-python3.12}
       AIRFLOW_VERSION: ${AIRFLOW_VERSION:-2.10.5}
       PYTHON_VERSION: ${AIRFLOW_PYTHON_VERSION:-3.12}
   image: ${PIPELINE_AIRFLOW_IMAGE:-japan-analysis-airflow:local}
+
+x-airflow-common: &airflow-common
+  image: ${PIPELINE_AIRFLOW_IMAGE:-japan-analysis-airflow:local}
   user: "${AIRFLOW_UID:-50000}:0"
   environment:
     <<: *airflow-env
   volumes:
-    - ./pipeline/airflow/dags:/opt/airflow/dags
-    - ./pipeline/airflow/logs:/opt/airflow/logs
-    - ./pipeline/airflow/plugins:/opt/airflow/plugins
-    - ./pipeline:/opt/airflow/pipeline
-    - ./analytics/dbt:/opt/airflow/dbt
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - .:/opt/airflow/pipeline
+    - ../analytics/dbt:/opt/airflow/dbt
   networks:
     - pipeline_net
     - source_net
 
 services:
+  airflow-image:
+    <<: *airflow-build
+    command: airflow version
+    environment:
+      <<: *airflow-env
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - .:/opt/airflow/pipeline
+      - ../analytics/dbt:/opt/airflow/dbt
+    networks:
+      - pipeline_net
+      - source_net
+    profiles: ["build"]
+    restart: "no"
+
   warehouse-postgres:
     image: ${PIPELINE_POSTGRES_IMAGE:-postgres:16.3-bookworm}
     restart: unless-stopped
@@ -98,7 +118,7 @@ services:
       AIRFLOW_DB: ${AIRFLOW_DB:-airflow_metadata}
       WAREHOUSE_DB: ${WAREHOUSE_DB:-japan_warehouse}
     volumes:
-      - ./pipeline/warehouse/init_warehouse.sh:/scripts/init_warehouse.sh:ro
+      - ./warehouse/init_warehouse.sh:/scripts/init_warehouse.sh:ro
     networks:
       - pipeline_net
     entrypoint: ["/bin/sh", "/scripts/init_warehouse.sh"]

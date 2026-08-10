@@ -65,14 +65,6 @@ def suumo_load_to_warehouse():
         return load_pending_batches(batch_ids=batch_ids, limit=limit)
 
     @task
-    def dbt_deps(load_summary: dict) -> dict:
-        """Install dbt packages only when at least one batch was loaded."""
-
-        _skip_when_no_loaded_batches(load_summary)
-        _run_dbt_command(["dbt", "deps"])
-        return load_summary
-
-    @task
     def dbt_run(load_summary: dict) -> dict:
         """Run dbt models after new raw warehouse rows are available."""
 
@@ -89,8 +81,7 @@ def suumo_load_to_warehouse():
         return load_summary
 
     load_summary = load_batches()
-    deps_summary = dbt_deps(load_summary)
-    run_summary = dbt_run(deps_summary)
+    run_summary = dbt_run(load_summary)
     dbt_test(run_summary)
 
 
