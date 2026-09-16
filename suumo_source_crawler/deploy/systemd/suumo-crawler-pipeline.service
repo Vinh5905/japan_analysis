@@ -1,0 +1,11 @@
+[Unit]
+Description=Run SUUMO crawler release pipeline with Telegram notifications
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/suumo-crawler
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env

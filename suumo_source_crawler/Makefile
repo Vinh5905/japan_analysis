@@ -33,6 +33,7 @@ help: ## Show available commands
 	@printf "  make python3-container workdir=/app/crawler args=\"-m scrapy crawl suumo_links\"\n"
 	@printf "  make prod-minio-preview path=\"suumo/data/20260723T165050155977Z.json.gz\"\n"
 	@printf "  make prod-task-json task_ids=\"123 456\" opts=\"--write-json\"\n"
+	@printf "  make telegram-test\n"
 	@printf "  make shell\n\n"
 
 .PHONY: config
@@ -126,6 +127,10 @@ prod-task-json: ## Fetch parser JSON records for VPS task ids, pass task_ids="12
 .PHONY: manual-rerun-failed-html
 manual-rerun-failed-html: ## Rerun failed crawl_tasks through suumo_html, optionally pass opts="--limit 10"
 	$(COMPOSE) --env-file $(ENV_FILE) exec -w /app/crawler python python tools/manual_rerun_failed_html.py $(opts)
+
+.PHONY: telegram-test
+telegram-test: ## Send one Telegram test message using ../.env
+	$(COMPOSE) --env-file $(ENV_FILE) run --rm python telegram-test $(opts)
 
 # Allow commands like `make python3 main/main.py` where the script path is treated as an argument.
 # Use args="..." when arguments start with "-", because make parses those as its own options.

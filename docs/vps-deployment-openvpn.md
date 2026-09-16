@@ -166,12 +166,21 @@ cd /opt/suumo-crawler
 mkdir -p tmp
 ```
 
-Folder `/opt/suumo-crawler` là nơi đặt file release runtime. VPS không cần source Python và không cần `Makefile`; code crawler thật nằm trong Docker image `kevinpham9257/suumo-crawler:<tag>`.
+Folder `/opt/suumo-crawler` là nơi đặt file release runtime. Code crawler thật vẫn nằm trong Docker image `kevinpham9257/suumo-crawler:<tag>`. Host chỉ cần thêm folder `suumo_source_crawler` để chạy script điều phối pipeline và gửi Telegram khi một lệnh Docker lỗi trước lúc container crawler khởi động.
 
 Từ máy local, copy file release lên VPS:
 
 ```bash
 scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml .env.release.example VPS_USER@VPS_HOST:/opt/suumo-crawler/
+ssh -i ~/.ssh/suumo_vps -p VPS_SSH_PORT VPS_USER@VPS_HOST \
+  'mkdir -p /opt/suumo-crawler/suumo_source_crawler/scripts /opt/suumo-crawler/suumo_source_crawler/crawler/crawler'
+scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT \
+  suumo_source_crawler/scripts/run_release_pipeline.py \
+  VPS_USER@VPS_HOST:/opt/suumo-crawler/suumo_source_crawler/scripts/
+scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT \
+  suumo_source_crawler/crawler/crawler/telegram_notifier.py \
+  suumo_source_crawler/crawler/crawler/__init__.py \
+  VPS_USER@VPS_HOST:/opt/suumo-crawler/suumo_source_crawler/crawler/crawler/
 ```
 
 Nếu bạn đã có file `.env` riêng trên local, copy thẳng `.env` thay vì `.env.release.example`.
@@ -186,7 +195,22 @@ cp .env.release.example .env
 nano .env
 ```
 
-`cp` tạo config runtime thật từ file mẫu. `nano` mở file để sửa password và tag image.
+`cp` tạo config runtime thật từ file mẫu. `nano` mở file để sửa password, tag image và hai biến Telegram:
+
+```env
+TELEGRAM_BOT_TOKEN=token_mới_từ_BotFather
+TELEGRAM_CHAT_ID=chat_id_của_bạn
+```
+
+Không commit file `.env`. Nếu token từng được gửi qua chat hoặc commit vào Git, revoke token cũ và tạo token mới trước khi chạy production.
+
+Test riêng kết nối Telegram, không cần khởi động PostgreSQL hoặc MinIO:
+
+```bash
+docker compose --env-file .env -f docker-compose.release.yml run --rm --no-deps telegram-test
+```
+
+Lệnh trả exit code `0` khi Telegram nhận message; API lỗi, timeout hoặc thiếu biến sẽ trả exit code khác `0` nhưng không ảnh hưởng crawler đang chạy.
 
 Sửa tối thiểu:
 
@@ -828,6 +852,27 @@ systemctl enable openvpn-client@japan
 
 Không dùng `enable --now` trong lần đầu, vì `--now` vừa enable vừa start ngay, dễ tự khóa SSH nếu route chưa đúng.
 
+## Trạng thái VPS hiện tại (2026-09-16)
+
+VPS đã thay cấu hình OpenVPN bằng file local `vpn_config/vpngate_219.100.37.115_tcp_443.ovpn`. File đang được dùng tại:
+
+```text
+/etc/openvpn/client/japan.conf
+```
+
+Config mới kết nối tới `219.100.37.115:443`, dùng certificate/key nhúng trong `.ovpn` và không dùng username/password qua `auth-user-pass`. File trên VPS đã được đặt quyền `600`; không ghi certificate hoặc private key vào Git/docs.
+
+Route SSH đã được chuẩn bị trước khi bật VPN:
+
+```text
+SSH client hiện tại: 14.169.112.125
+VPS gateway: 103.249.116.1
+Public interface: eth0
+Persistent route: route 14.169.112.125 255.255.255.255 net_gateway
+```
+
+Route runtime cũng đã được kiểm tra bằng `ip route get 14.169.112.125` và đi qua `103.249.116.1 dev eth0`. `openvpn-client@japan` đang `enabled` nhưng vẫn `inactive`; chưa bật VPN sau khi thêm route. IP SSH là IP động, nên lần sau phải lấy IP đầu tiên từ `$SSH_CLIENT` và cập nhật route nếu khác giá trị trên.
+
 ## 17. Chạy crawler khi VPN host đang bật
 
 Khi host đã đi qua VPN, Docker container mặc định cũng đi outbound qua NAT của host, nên crawler thường sẽ đi qua VPN.
@@ -852,24 +897,22 @@ docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
 
 Nên dùng `systemd timer` thay vì cron vì dễ xem trạng thái, log, lần chạy kế tiếp, và có `Persistent=true` để chạy bù nếu VPS bị tắt đúng lịch.
 
-Trước hết test pipeline thủ công trong `/opt/suumo-crawler`:
+Trước hết test pipeline runner thủ công trong `/opt/suumo-crawler`:
 
 ```bash
 cd /opt/suumo-crawler
-docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
-docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
-docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
-docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
-docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
+python3 suumo_source_crawler/scripts/run_release_pipeline.py \
+  --compose-file /opt/suumo-crawler/docker-compose.release.yml \
+  --env-file /opt/suumo-crawler/.env
 ```
 
-Lệnh này chạy đủ thứ tự:
+Runner chạy đủ thứ tự:
 
 ```text
 bootstrap -> suumo_links -> suumo_html -> suumo_page
 ```
 
-Nếu một bước lỗi, shell/systemd sẽ dừng và không chạy bước tiếp theo.
+Nếu một bước lỗi, runner dừng, giữ nguyên exit code, gửi Telegram kèm bước lỗi và phần cuối log, rồi systemd đánh dấu service failed. Runner dùng `--pull never` để lịch chạy chỉ dùng image đã pull sẵn và không phụ thuộc Docker Hub.
 
 Tạo service:
 
@@ -889,24 +932,20 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/suumo-crawler
-ExecStartPre=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml up -d postgres minio
-ExecStartPre=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
-ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
-ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
-ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env
 ```
 
 Giải thích:
 
 - `Type=oneshot`: job chạy xong thì kết thúc, phù hợp crawler batch.
-- `WorkingDirectory=/opt/suumo-crawler`: nơi có `.env`, `docker-compose.release.yml`, và thư mục `tmp`.
-- `ExecStartPre=... up -d postgres minio`: đảm bảo PostgreSQL và MinIO đang chạy trước khi crawl.
-- `ExecStartPre=... crawler-init`: đảm bảo DB schema và MinIO bucket/prefix đã sẵn sàng.
-- Ba dòng `ExecStart`: chạy lần lượt `suumo-links`, `suumo-html`, rồi `suumo-page`. `Type=oneshot` cho phép nhiều dòng `ExecStart` chạy tuần tự.
+- `WorkingDirectory=/opt/suumo-crawler`: nơi có `.env`, `docker-compose.release.yml`, source của runner và thư mục `tmp`.
+- `ExecStart=...run_release_pipeline.py`: gửi pipeline start, đảm bảo PostgreSQL/MinIO và schema sẵn sàng, sau đó chạy `suumo-links`, `suumo-html`, `suumo-page` tuần tự.
+- Mỗi spider gửi start/summary riêng. Pipeline gửi summary tổng hoặc failure của bước đầu tiên bị lỗi.
 - `Requires=docker.service`: nếu Docker không chạy thì service không nên chạy.
 - `After=docker.service network-online.target`: đợi Docker và network sẵn sàng trước.
 
-Không đặt `docker compose pull` trong scheduled service. Nếu OpenVPN đang bật, VPS có thể không kết nối được Docker Hub registry và làm job fail trước khi crawl. Image nên được pull thủ công lúc deploy/update, sau đó job định kỳ chỉ chạy crawler bằng image đã có sẵn.
+Không đặt `docker compose pull` trong scheduled service. Nếu OpenVPN đang bật, VPS có thể không kết nối được Docker Hub registry và làm job fail trước khi crawl. Image nên được pull thủ công lúc deploy/update; runner dùng `--pull never` để job định kỳ chỉ chạy image local.
 
 Nếu muốn pipeline chỉ chạy khi host OpenVPN đã bật, có thể thêm vào phần `[Unit]`:
 
@@ -941,25 +980,19 @@ Nếu muốn `19:00` là giờ Nhật:
 timedatectl set-timezone Asia/Tokyo
 ```
 
-Nếu muốn chạy mỗi 2 ngày lúc 19:00, dùng:
+Nếu muốn chạy mỗi ngày lúc 00:00, dùng:
 
 ```systemd
 [Unit]
-Description=Run SUUMO crawler pipeline every 2 days at 19:00
+Description=Run SUUMO crawler pipeline every day at 00:00
 
 [Timer]
-OnCalendar=*-*-01/2 19:00:00
+OnCalendar=*-*-* 00:00:00
 Persistent=true
 Unit=suumo-crawler-pipeline.service
 
 [Install]
 WantedBy=timers.target
-```
-
-Nếu muốn chạy mỗi 3 ngày lúc 19:00, đổi thành:
-
-```systemd
-OnCalendar=*-*-01/3 19:00:00
 ```
 
 Nếu muốn chạy mỗi ngày lúc 19:00, đổi thành:
@@ -968,11 +1001,17 @@ Nếu muốn chạy mỗi ngày lúc 19:00, đổi thành:
 OnCalendar=*-*-* 19:00:00
 ```
 
+Nếu muốn chạy mỗi 2 ngày lúc 19:00, đổi thành:
+
+```systemd
+OnCalendar=*-*-01/2 19:00:00
+```
+
 Giải thích:
 
-- `OnCalendar=*-*-01/2 19:00:00`: chạy lúc 19:00 các ngày 1, 3, 5, 7... trong tháng.
-- `OnCalendar=*-*-01/3 19:00:00`: chạy lúc 19:00 các ngày 1, 4, 7, 10... trong tháng.
+- `OnCalendar=*-*-* 00:00:00`: chạy mỗi ngày lúc 00:00.
 - `OnCalendar=*-*-* 19:00:00`: chạy mỗi ngày lúc 19:00.
+- `OnCalendar=*-*-01/2 19:00:00`: chạy lúc 19:00 các ngày 1, 3, 5, 7... trong tháng.
 - `Persistent=true`: nếu VPS tắt đúng lúc tới lịch, lần boot tiếp theo systemd sẽ chạy bù.
 - `Unit=suumo-crawler-pipeline.service`: timer này kích hoạt service pipeline.
 
@@ -981,7 +1020,7 @@ Không dùng `OnBootSec` cho case này. Nếu VPS đã boot từ lâu rồi mớ
 Preview lịch chạy tiếp theo:
 
 ```bash
-systemd-analyze calendar '*-*-01/2 19:00:00'
+systemd-analyze calendar '*-*-* 00:00:00'
 ```
 
 Reload systemd:

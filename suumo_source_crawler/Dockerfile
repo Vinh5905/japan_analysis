@@ -31,6 +31,7 @@ RUN chmod +x /usr/local/bin/python-healthcheck \
     /usr/local/bin/crawler-init \
     /usr/local/bin/crawler-shell \
     /usr/local/bin/manual-rerun-failed-html \
-    /usr/local/bin/minio-preview
+    /usr/local/bin/minio-preview \
+    /usr/local/bin/telegram-test
 
 CMD ["python", "-m", "http.server", "8000"]

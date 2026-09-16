@@ -369,6 +369,8 @@ class SuumoPageSpider(scrapy.Spider):
             "file_format": "json",
             "compression": stored_object.compression,
             "row_count": len(records),
+            "valid_count": sum(record.get("is_valid") is True for record in records),
+            "invalid_count": sum(record.get("is_valid") is not True for record in records),
             "file_hash": stored_object.stored_hash,
             "stored_length": stored_object.stored_length,
             "task_ids": task_ids,

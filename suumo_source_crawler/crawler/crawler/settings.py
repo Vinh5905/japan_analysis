@@ -81,11 +81,11 @@ DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.SuumoHtmlTaskClaimMiddleware": 410,
 }
 
-# Enable or disable extensions
-# See https://docs.scrapy.org/en/latest/topics/extensions.html
-#EXTENSIONS = {
-#    "scrapy.extensions.telnet.TelnetConsole": None,
-#}
+# Enable lifecycle notifications and summary collection. The extension becomes
+# a no-op for Telegram delivery when its two environment variables are absent.
+EXTENSIONS = {
+    "crawler.telegram_extension.TelegramNotificationExtension": 500,
+}
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html

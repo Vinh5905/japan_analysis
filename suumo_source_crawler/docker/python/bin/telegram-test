@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+cd /app/crawler
+exec python tools/telegram_test.py "$@"

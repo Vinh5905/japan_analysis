@@ -35,6 +35,11 @@ x-crawler-env: &crawler-env
   AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
   AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin_change_me}
   AIRFLOW_NOTIFY_TIMEOUT_SECONDS: ${AIRFLOW_NOTIFY_TIMEOUT_SECONDS:-10}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  TELEGRAM_HOSTNAME: ${TELEGRAM_HOSTNAME:-}
+  TELEGRAM_PIPELINE_RUN_ID: ${TELEGRAM_PIPELINE_RUN_ID:-}
+  TELEGRAM_SUMMARY_DIR: /app/crawler/tmp/telegram
 
 x-crawler-service: &crawler-service
   image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
@@ -151,6 +156,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    profiles: ["tools"]
+    restart: "no"
+
+  telegram-test:
+    <<: *crawler-service
+    command: telegram-test
     profiles: ["tools"]
     restart: "no"
 
