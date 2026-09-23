@@ -216,7 +216,17 @@ class TelegramNotificationExtension:
             )
         )
         possible_causes = infer_possible_causes(diagnostic_text)
-        if warning_message and not possible_causes:
+        no_results = (
+            spider.name == "suumo_links" and new_links == 0
+            or spider.name == "suumo_html"
+            and self.html_success_count + self.html_failed_count == 0
+            or spider.name == "suumo_page" and self.parsed_record_count == 0
+        )
+        if reason == "shutdown":
+            possible_causes.append(
+                "Job nhận tín hiệu dừng từ bên ngoài; kiểm tra timeout, systemctl stop hoặc journal của pipeline."
+            )
+        elif warning_message and not possible_causes and no_results:
             possible_causes = self._empty_result_causes(spider.name, stats)
 
         return SpiderRunSummary(
@@ -312,8 +322,11 @@ class TelegramNotificationExtension:
 
         fields["Cảnh báo"] = summary.warning_message
         if summary.status == "failed":
-            fields["Exception type"] = summary.exception_type or "SpiderClosed"
-            fields["Error message"] = summary.error_message or summary.close_reason
+            if summary.exception_type:
+                fields["Exception type"] = summary.exception_type
+                fields["Error message"] = summary.error_message or summary.close_reason
+            else:
+                fields["Lý do dừng"] = summary.close_reason
         elif summary.exception_type:
             fields["Lỗi gần nhất"] = (
                 f"{summary.exception_type}: {summary.error_message or 'không có nội dung'}"

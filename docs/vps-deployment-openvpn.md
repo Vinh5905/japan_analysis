@@ -933,7 +933,7 @@ Wants=network-online.target openvpn-client@japan.service
 Type=oneshot
 WorkingDirectory=/opt/suumo-crawler
 Environment=PYTHONUNBUFFERED=1
-TimeoutStartSec=20min
+TimeoutStartSec=infinity
 ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0 --restart-attempts 3 --checks-per-attempt 120 --required-consecutive-checks 3 --check-interval-seconds 2
 ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env
 ```
@@ -944,7 +944,7 @@ Giải thích:
 - `WorkingDirectory=/opt/suumo-crawler`: nơi có `.env`, `docker-compose.release.yml`, source của runner và thư mục `tmp`.
 - `ExecStart=...run_release_pipeline.py`: gửi pipeline start, đảm bảo PostgreSQL/MinIO và schema sẵn sàng, sau đó chạy `suumo-links`, `suumo-html`, `suumo-page` tuần tự.
 - `ExecStartPre=...ensure_openvpn.py`: gửi Telegram bắt đầu kiểm tra VPN, thông báo VPN đã bật/chưa bật, tự bật lại tối đa 3 lần và chỉ trả thành công khi tunnel khỏe. Nếu service đang `active`/`activating`, script cho OpenVPN tối đa 4 phút để tự reconnect trước khi ép restart. Mỗi lần có tối đa 120 lượt kiểm tra, cách nhau 2 giây; phải đạt 3 lượt khỏe liên tiếp mới cho crawler chạy.
-- `TimeoutStartSec=20min`: cho phép preflight chờ server VPNGate chậm hoặc reset kết nối nhiều lần mà không bị systemd kết thúc sau timeout mặc định.
+- `TimeoutStartSec=infinity`: crawler có thể chạy nhiều giờ; giới hạn 20 phút trước đây khiến systemd gửi SIGTERM lúc job HTML đang chạy. Preflight VPN vẫn giới hạn bởi số lượt kiểm tra và tối đa 3 lần restart.
 - Một lượt chỉ được coi là khỏe khi `openvpn-client@japan` là `active`, interface `tun0` đang `UP`, và cả route `0.0.0.0/1` lẫn `128.0.0.0/1` đều đi qua `tun0`.
 - Nếu VPN vẫn không khỏe sau số lần retry, `ExecStartPre` trả exit code khác 0; systemd đánh dấu pipeline failed và không chạy crawler bằng IP public của VPS.
 - `--env-file /opt/suumo-crawler/.env` cho phép preflight dùng cùng `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID` với pipeline. Telegram lỗi hoặc thiếu biến không làm preflight crash; nhưng VPN không khỏe luôn chặn crawler.

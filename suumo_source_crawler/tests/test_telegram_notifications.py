@@ -163,6 +163,43 @@ class TelegramNotifierTests(unittest.TestCase):
 
 
 class TelegramExtensionTests(unittest.TestCase):
+    def test_one_failed_html_is_warning_and_crawl_continues(self):
+        extension = TelegramNotificationExtension(FakeCrawler())
+        self.addCleanup(extension.engine_stopped)
+        notifier = CapturingNotifier()
+        extension.notifier = notifier
+        spider = FakeSpider("suumo_html")
+
+        extension.spider_opened(spider)
+        extension.item_scraped({"status": "pending"}, None, spider)
+        extension.item_scraped({"status": "failed"}, None, spider)
+        extension.spider_closed(spider, "finished")
+
+        message = notifier.messages[-1]
+        self.assertIn("JOB HOÀN THÀNH CÓ CẢNH BÁO", message)
+        self.assertIn("HTML thành công: 1", message)
+        self.assertIn("HTML thất bại: 1", message)
+        self.assertNotIn("Job links không tạo URL mới", message)
+
+    def test_shutdown_reports_external_stop_without_fabricated_exception(self):
+        extension = TelegramNotificationExtension(FakeCrawler())
+        self.addCleanup(extension.engine_stopped)
+        notifier = CapturingNotifier()
+        extension.notifier = notifier
+        spider = FakeSpider("suumo_html")
+
+        extension.spider_opened(spider)
+        extension.item_scraped({"status": "pending"}, None, spider)
+        extension.item_scraped({"status": "failed"}, None, spider)
+        extension.spider_closed(spider, "shutdown")
+
+        message = notifier.messages[-1]
+        self.assertIn("JOB THẤT BẠI", message)
+        self.assertIn("Lý do dừng: shutdown", message)
+        self.assertIn("tín hiệu dừng từ bên ngoài", message)
+        self.assertNotIn("Exception type: SpiderClosed", message)
+        self.assertNotIn("Job links không tạo URL mới", message)
+
     def test_logging_handler_buffers_only_error_records_from_logger(self):
         logger = logging.getLogger("test.telegram.buffer")
         logger.setLevel(logging.DEBUG)
