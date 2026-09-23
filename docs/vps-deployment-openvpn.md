@@ -852,7 +852,7 @@ systemctl enable openvpn-client@japan
 
 Không dùng `enable --now` trong lần đầu, vì `--now` vừa enable vừa start ngay, dễ tự khóa SSH nếu route chưa đúng.
 
-## Trạng thái VPS hiện tại (2026-09-16)
+## Trạng thái VPS hiện tại (2026-09-23)
 
 VPS đã thay cấu hình OpenVPN bằng file local `vpn_config/vpngate_219.100.37.115_tcp_443.ovpn`. File đang được dùng tại:
 
@@ -865,13 +865,13 @@ Config mới kết nối tới `219.100.37.115:443`, dùng certificate/key nhún
 Route SSH đã được chuẩn bị trước khi bật VPN:
 
 ```text
-SSH client hiện tại: 14.169.112.125
+SSH client hiện tại: 113.161.73.167
 VPS gateway: 103.249.116.1
 Public interface: eth0
-Persistent route: route 14.169.112.125 255.255.255.255 net_gateway
+Persistent route: route 113.161.73.167 255.255.255.255 net_gateway
 ```
 
-Route runtime cũng đã được kiểm tra bằng `ip route get 14.169.112.125` và đi qua `103.249.116.1 dev eth0`. `openvpn-client@japan` đang `enabled` nhưng vẫn `inactive`; chưa bật VPN sau khi thêm route. IP SSH là IP động, nên lần sau phải lấy IP đầu tiên từ `$SSH_CLIENT` và cập nhật route nếu khác giá trị trên.
+Route runtime đã được kiểm tra bằng `ip route get 113.161.73.167` và đi qua `103.249.116.1 dev eth0`. Preflight mới đã được deploy; lần test ngày 2026-09-23 tự bật VPN thành công ở lần `1/3`, xác nhận `tun0` và hai route redirect-gateway, đồng thời SSH vẫn giữ qua `eth0`. IP SSH là IP động, nên lần sau phải lấy IP đầu tiên từ `$SSH_CLIENT` và cập nhật route nếu khác giá trị trên.
 
 ## 17. Chạy crawler khi VPN host đang bật
 
@@ -926,13 +926,15 @@ Dán nội dung:
 [Unit]
 Description=Run SUUMO crawler release pipeline
 Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
+After=docker.service network-online.target openvpn-client@japan.service
+Wants=network-online.target openvpn-client@japan.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/suumo-crawler
 Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=20min
+ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0 --restart-attempts 3 --checks-per-attempt 120 --required-consecutive-checks 3 --check-interval-seconds 2
 ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env
 ```
 
@@ -941,20 +943,41 @@ Giải thích:
 - `Type=oneshot`: job chạy xong thì kết thúc, phù hợp crawler batch.
 - `WorkingDirectory=/opt/suumo-crawler`: nơi có `.env`, `docker-compose.release.yml`, source của runner và thư mục `tmp`.
 - `ExecStart=...run_release_pipeline.py`: gửi pipeline start, đảm bảo PostgreSQL/MinIO và schema sẵn sàng, sau đó chạy `suumo-links`, `suumo-html`, `suumo-page` tuần tự.
+- `ExecStartPre=...ensure_openvpn.py`: gửi Telegram bắt đầu kiểm tra VPN, thông báo VPN đã bật/chưa bật, tự bật lại tối đa 3 lần và chỉ trả thành công khi tunnel khỏe. Nếu service đang `active`/`activating`, script cho OpenVPN tối đa 4 phút để tự reconnect trước khi ép restart. Mỗi lần có tối đa 120 lượt kiểm tra, cách nhau 2 giây; phải đạt 3 lượt khỏe liên tiếp mới cho crawler chạy.
+- `TimeoutStartSec=20min`: cho phép preflight chờ server VPNGate chậm hoặc reset kết nối nhiều lần mà không bị systemd kết thúc sau timeout mặc định.
+- Một lượt chỉ được coi là khỏe khi `openvpn-client@japan` là `active`, interface `tun0` đang `UP`, và cả route `0.0.0.0/1` lẫn `128.0.0.0/1` đều đi qua `tun0`.
+- Nếu VPN vẫn không khỏe sau số lần retry, `ExecStartPre` trả exit code khác 0; systemd đánh dấu pipeline failed và không chạy crawler bằng IP public của VPS.
+- `--env-file /opt/suumo-crawler/.env` cho phép preflight dùng cùng `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID` với pipeline. Telegram lỗi hoặc thiếu biến không làm preflight crash; nhưng VPN không khỏe luôn chặn crawler.
 - Mỗi spider gửi start/summary riêng. Pipeline gửi summary tổng hoặc failure của bước đầu tiên bị lỗi.
 - `Requires=docker.service`: nếu Docker không chạy thì service không nên chạy.
-- `After=docker.service network-online.target`: đợi Docker và network sẵn sàng trước.
+- `Wants/After=openvpn-client@japan.service`: yêu cầu systemd thử start OpenVPN trước, sau đó preflight chịu trách nhiệm xác nhận tunnel thật sự khỏe.
 
 Không đặt `docker compose pull` trong scheduled service. Nếu OpenVPN đang bật, VPS có thể không kết nối được Docker Hub registry và làm job fail trước khi crawl. Image nên được pull thủ công lúc deploy/update; runner dùng `--pull never` để job định kỳ chỉ chạy image local.
 
-Nếu muốn pipeline chỉ chạy khi host OpenVPN đã bật, có thể thêm vào phần `[Unit]`:
+Preflight không tự hủy `openvpn-ssh-rollback.timer`. Rollback bảo vệ SSH là cơ chế dành cho lần test thủ công và chỉ được hủy sau khi người vận hành xác nhận route tới IP SSH hiện tại vẫn đi qua public gateway. Systemd không biết IP Wi-Fi tương lai của người vận hành, nên tự hủy rollback chỉ dựa trên trạng thái `tun0` là không an toàn.
 
-```systemd
-Wants=openvpn-client@japan.service
-After=openvpn-client@japan.service
+Sau khi đồng bộ repository mới lên `/opt/suumo-crawler`, cài lại unit đã version-control:
+
+```bash
+install -m 0644 \
+  /opt/suumo-crawler/suumo_source_crawler/deploy/systemd/suumo-crawler-pipeline.service \
+  /etc/systemd/system/suumo-crawler-pipeline.service
+systemctl daemon-reload
 ```
 
-Không dùng `Requires=openvpn-client@japan.service` nếu bạn chưa chắc VPN luôn ổn, vì VPN lỗi sẽ làm pipeline không chạy.
+Có thể test riêng preflight mà chưa chạy crawler:
+
+```bash
+python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py \
+  --service openvpn-client@japan \
+  --interface tun0 \
+  --restart-attempts 3 \
+  --checks-per-attempt 120 \
+  --required-consecutive-checks 3 \
+  --check-interval-seconds 2
+```
+
+Chỉ test lệnh này từ SSH sau khi đã thêm route cho IP hiện tại và đặt safety rollback như phần 16. Cơ chế preflight đảm bảo crawler không chạy thiếu VPN, nhưng không thể tự giải quyết việc IP Wi-Fi của máy quản trị thay đổi.
 
 Tạo timer:
 

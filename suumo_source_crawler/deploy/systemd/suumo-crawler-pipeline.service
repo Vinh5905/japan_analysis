@@ -1,11 +1,13 @@
 [Unit]
 Description=Run SUUMO crawler release pipeline with Telegram notifications
 Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
+After=docker.service network-online.target openvpn-client@japan.service
+Wants=network-online.target openvpn-client@japan.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/suumo-crawler
 Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=20min
+ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0 --restart-attempts 3 --checks-per-attempt 120 --required-consecutive-checks 3 --check-interval-seconds 2
 ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env
