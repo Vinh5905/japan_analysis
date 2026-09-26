@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -44,6 +45,7 @@ class SourceBatch:
     file_format: str
     compression: str | None
     row_count: int
+    file_hash: str
 
 
 def load_source_postgres_config() -> PostgresConfig:
@@ -145,7 +147,8 @@ def claim_source_batch(batch_id: int) -> SourceBatch | None:
                         file_path,
                         file_format,
                         compression,
-                        row_count
+                        row_count,
+                        file_hash
                     """,
                     (batch_id,),
                 )
@@ -160,6 +163,7 @@ def claim_source_batch(batch_id: int) -> SourceBatch | None:
                     file_format=row[3],
                     compression=row[4],
                     row_count=int(row[5]),
+                    file_hash=row[6],
                 )
 
 
@@ -215,6 +219,34 @@ def mark_source_batch_failed(batch_id: int, error_message: str) -> None:
                 )
 
 
+def reset_source_batch(batch_id: int, stale_minutes: int = 60) -> None:
+    """Manually return a failed or stale loading batch to pending."""
+
+    if batch_id <= 0 or stale_minutes <= 0:
+        raise ValueError("batch_id and stale_minutes must be positive")
+    with postgres_connection(load_source_postgres_config()) as connection:
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE load_batches
+                    SET status = 'pending', inserted_count = 0, failed_count = 0,
+                        started_loading_at = NULL, finished_loading_at = NULL,
+                        loaded_at = NULL, error_message = NULL
+                    WHERE batch_id = %s
+                      AND (status = 'failed' OR
+                           (status = 'loading' AND started_loading_at <
+                            now() - (%s * interval '1 minute')))
+                    RETURNING batch_id
+                    """,
+                    (batch_id, stale_minutes),
+                )
+                if cursor.fetchone() is None:
+                    raise ValueError(
+                        f"Batch {batch_id} is not failed or loading longer than {stale_minutes} minutes"
+                    )
+
+
 def split_storage_path(storage_path: str) -> tuple[str, str]:
     """Split a logical MinIO path like suumo/data/file.json.gz."""
 
@@ -247,6 +279,10 @@ def read_minio_batch(batch: SourceBatch) -> list[Any]:
         response.close()
         response.release_conn()
 
+    actual_hash = hashlib.sha256(payload).hexdigest()
+    if actual_hash != batch.file_hash:
+        raise ValueError(f"Batch {batch.batch_id} file hash mismatch")
+
     if batch.compression == "gzip":
         payload = gzip.decompress(payload)
     elif batch.compression:
@@ -256,70 +292,76 @@ def read_minio_batch(batch: SourceBatch) -> list[Any]:
     if not isinstance(records, list):
         raise ValueError("Batch JSON payload must be an array")
 
+    if len(records) != batch.row_count:
+        raise ValueError(
+            f"Batch {batch.batch_id} row_count mismatch: expected {batch.row_count}, got {len(records)}"
+        )
+
     return records
+
+
+def validate_batch_records(records: list[Any]) -> tuple[list[tuple[int, str, dict]], int]:
+    """Validate every record before writing any warehouse row."""
+
+    valid_records = []
+    failed_count = 0
+    seen_task_ids = set()
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f"Record {index} must be a JSON object")
+        task_id = record.get("task_id")
+        if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
+            raise ValueError(f"Record {index} has invalid task_id")
+        if task_id in seen_task_ids:
+            raise ValueError(f"Duplicate task_id {task_id} in batch")
+        seen_task_ids.add(task_id)
+        if type(record.get("is_valid")) is not bool:
+            raise ValueError(f"Record {index} has invalid is_valid")
+        if record["is_valid"] is False:
+            failed_count += 1
+            continue
+        data_hash = record.get("data_hash")
+        if not isinstance(data_hash, str) or len(data_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in data_hash
+        ):
+            raise ValueError(f"Record {index} has invalid data_hash")
+        valid_records.append((task_id, data_hash, record))
+    return valid_records, failed_count
 
 
 def load_records_to_warehouse(batch: SourceBatch, records: list[Any]) -> dict[str, int]:
     """Write only valid parser records into raw.suumo_parser_records."""
 
     warehouse_config = load_warehouse_postgres_config()
-    inserted_count = 0
-    failed_count = 0
+    valid_records, failed_count = validate_batch_records(records)
     loaded_at = datetime.now(timezone.utc)
 
     with postgres_connection(warehouse_config) as connection:
-        for record in records:
-            try:
-                if not isinstance(record, dict):
-                    raise ValueError("Parser record must be a JSON object")
-                if record.get("is_valid") is not True:
-                    failed_count += 1
-                    continue
-
-                task_id = int(record["task_id"])
-                data_hash = str(record["data_hash"])
-                if not data_hash:
-                    raise ValueError("Parser record data_hash is empty")
-
-                with connection.transaction():
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            """
-                            INSERT INTO raw.suumo_parser_records (
-                                task_id,
-                                batch_id,
-                                source_id,
-                                data_hash,
-                                record,
-                                loaded_at,
-                                created_at,
-                                updated_at
-                            )
-                            VALUES (%s, %s, %s, %s, %s, %s, now(), now())
-                            ON CONFLICT (task_id)
-                            DO UPDATE SET
-                                batch_id = EXCLUDED.batch_id,
-                                source_id = EXCLUDED.source_id,
-                                data_hash = EXCLUDED.data_hash,
-                                record = EXCLUDED.record,
-                                loaded_at = EXCLUDED.loaded_at,
-                                updated_at = now()
-                            """,
-                            (
-                                task_id,
-                                batch.batch_id,
-                                batch.source_id,
-                                data_hash,
-                                Jsonb(record),
-                                loaded_at,
-                            ),
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                for task_id, data_hash, record in valid_records:
+                    cursor.execute(
+                        """
+                        INSERT INTO raw.suumo_parser_records (
+                            task_id, batch_id, source_id, data_hash, record,
+                            loaded_at, created_at, updated_at
                         )
-                inserted_count += 1
-            except Exception:
-                failed_count += 1
+                        VALUES (%s, %s, %s, %s, %s, %s, now(), now())
+                        ON CONFLICT (task_id)
+                        DO UPDATE SET
+                            batch_id = EXCLUDED.batch_id,
+                            source_id = EXCLUDED.source_id,
+                            data_hash = EXCLUDED.data_hash,
+                            record = EXCLUDED.record,
+                            loaded_at = EXCLUDED.loaded_at,
+                            updated_at = now()
+                        """,
+                        (task_id, batch.batch_id, batch.source_id, data_hash,
+                         Jsonb(record), loaded_at),
+                    )
 
     return {
-        "inserted_count": inserted_count,
+        "inserted_count": len(valid_records),
         "failed_count": failed_count,
     }
 

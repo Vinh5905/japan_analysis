@@ -6,6 +6,7 @@ profile: japan_analysis
 
 model-paths: ["models"]
 macro-paths: ["macros"]
+seed-paths: ["seeds"]
 
 clean-targets:
   - target
@@ -16,6 +17,33 @@ models:
     staging:
       +schema: staging
       +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
     marts:
       +schema: mart
       +materialized: table
+      +tags: [suumo_mart]
+    analytics:
+      +schema: analytics
+      +materialized: table
+      +tags: [suumo_analytics]
+
+seeds:
+  japan_analysis:
+    suumo_parser_records_seed:
+      +schema: raw
+      +quote_columns: false
+      +column_types:
+        task_id: bigint
+        batch_id: bigint
+        source_id: bigint
+        is_valid: boolean
+        parsed_at: text
+        suumo_property_code: text
+        shop_property_code: text
+        phone_number: text
+        batch_file_path: text
+        data_hash: text
+        image_public_url: text
+        image_storage_path: text

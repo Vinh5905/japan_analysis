@@ -6,6 +6,7 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowSkipException
+from airflow.utils.trigger_rule import TriggerRule
 
 from loaders.suumo_batch_loader import load_pending_batches
 
@@ -66,10 +67,14 @@ def suumo_load_to_warehouse():
 
     @task
     def dbt_run(load_summary: dict) -> dict:
-        """Run dbt models after new raw warehouse rows are available."""
+        """Build models with dependency-gating tests after raw rows are available."""
 
         _skip_when_no_loaded_batches(load_summary)
-        _run_dbt_command(["dbt", "run"])
+        # The static notebook bootstrap is loaded explicitly once. Reloading an
+        # 18 MB seed after every operational batch would add avoidable work.
+        _run_dbt_command([
+            "dbt", "build", "--exclude", "tag:suumo_notebook_seed"
+        ])
         return load_summary
 
     @task
@@ -80,9 +85,22 @@ def suumo_load_to_warehouse():
         _run_dbt_command(["dbt", "test"])
         return load_summary
 
+    @task(trigger_rule=TriggerRule.ALL_DONE)
+    def report_batch_failures(load_summary: dict) -> None:
+        """Fail the DAG after dbt has processed successful batches."""
+
+        failures = [
+            result for result in load_summary["results"]
+            if result.get("status") == "failed"
+        ]
+        if failures:
+            raise RuntimeError(f"Failed batch IDs: {[item['batch_id'] for item in failures]}")
+
     load_summary = load_batches()
     run_summary = dbt_run(load_summary)
-    dbt_test(run_summary)
+    test_summary = dbt_test(run_summary)
+    report = report_batch_failures(load_summary)
+    test_summary >> report
 
 
 suumo_load_to_warehouse()

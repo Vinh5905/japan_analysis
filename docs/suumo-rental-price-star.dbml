@@ -1,0 +1,181 @@
+// Implemented by analytics/dbt/models/marts. PostgreSQL / dbt Core.
+// Business identity = (source_id, suumo_property_code); observation = task_id.
+// No physical room/building identity and no physical periodic snapshots.
+// Hash keys are deterministic text, not auto-increment IDs.
+// DBML PK/FK/NOT NULL annotations describe the logical contract:
+// dbt enforces uniqueness with indexes and integrity with data tests.
+// They are not PostgreSQL FK constraints created by this diagram.
+
+Project japan_rental_price_mart {
+  database_type: 'PostgreSQL'
+  Note: 'Observed SUUMO rental asking prices. parsed_at_utc is processing time, not market validity. Latest known does not mean still active.'
+}
+
+Table mart.dim_date {
+  date_key integer [pk]
+  calendar_date date [not null, unique]
+  day_of_month integer
+  day_of_week integer
+  iso_week integer
+  iso_week_year integer
+  month_number integer
+  quarter_number integer
+  calendar_year integer
+  is_weekend boolean
+  Note: 'Continuous calendar between observed bounds; date derived in Asia/Tokyo. No source_updated_date role.'
+}
+
+Table mart.dim_rental_listing {
+  listing_version_key text [pk, note: 'MD5 of JSON array [source_id, code, first task of consecutive version]']
+  source_id bigint [not null]
+  suumo_property_code text [not null]
+  version_number integer [not null]
+  effective_from_parsed_at_utc timestamptz [not null]
+  effective_from_task_id bigint [not null]
+  effective_to_parsed_at_utc timestamptz
+  effective_to_task_id bigint
+  is_current_version boolean [not null]
+  building_type text
+  structure text
+  direction text
+  building_age_years integer
+  building_total_floors integer
+  total_units_count integer
+  floor_min integer
+  floor_max integer
+  floor_number integer
+  layout_room_count integer
+  building_age_is_lower_bound boolean
+  built_at date
+  built_at_precision text [note: 'year or month; day 01 is a placeholder, not exact construction day']
+  layout_normalized text
+  layout_has_service_room boolean
+  layout_space_count integer
+  western_room_count integer
+  japanese_room_count integer
+  service_room_count integer
+  largest_private_room_jo numeric
+  kitchen_type text
+  kitchen_size_jo numeric
+  loft_present boolean
+  loft_size_jo numeric
+  transaction_type text
+  contract_type text
+  contract_years integer
+  contract_months integer
+  move_in_status text
+  move_in_month text [note: 'YYYY-MM; no invented day']
+  move_in_period text
+  insurance_required boolean
+  insurance_period_years integer
+  brokerage_fee_months numeric
+  parking_location text
+  parking_distance_m integer
+  parking_detail text
+  parking_max_spaces integer
+  parking_listing_status text [note: 'listed or unknown; missing does not mean unavailable']
+  brokerage_fee_amount_basis text [note: 'reported_jpy, estimated_from_months, unknown']
+  area_band text [note: 'unknown, <20, 20-<30, 30-<40, 40-<50, 50-<70, 70-<100, >=100; exact area is only in fact']
+  area_band_sort integer
+
+  Indexes {
+    (source_id, suumo_property_code, version_number) [unique]
+  }
+  Note: '''
+    SCD Type 2 for all listing descriptors, including rental terms.
+    Only descriptor changes create versions; price-only changes do not.
+    Exact area changes within one band do not create a version.
+    A -> B -> A creates three consecutive versions.
+    Validity is half-open on (parsed_at_utc, task_id), including tied timestamps.
+    Current version has both end fields NULL; exactly one current version per identity.
+    Detailed layout features are NULL unless layout detail parses fully.
+    Full reconstruction handles late data and source corrections.
+    Version numbers may shift after a historical correction; never use them as keys.
+  '''
+}
+
+Table mart.dim_geography {
+  geography_key text [pk]
+  prefecture text
+  district text
+  municipality text
+  ward text
+  locality text
+  chome text
+  Note: 'Immutable normalized profile. JSONB-based hash distinguishes NULL from text. All-NULL profile exists when observed; no invented administrative codes.'
+}
+
+Table mart.dim_observation_quality {
+  observation_quality_key text [pk]
+  flag_missing_core boolean
+  flag_floor_exceeds_building boolean
+  flag_layout_detail_parse_failure boolean
+  layout_detail_parse_status text
+  station_access_parse_status text
+  Note: 'Independent quality profile; station status is full, partial, failed or missing. QA state itself does not enter the SCD descriptor comparison.'
+}
+
+Table mart.fct_rental_price_observation {
+  task_id bigint [pk]
+  record_origin text [not null, note: 'operational or notebook_seed']
+  listing_version_key text [not null]
+  geography_key text [not null]
+  observation_quality_key text [not null]
+  parsed_date_key integer [not null]
+  parsed_at_utc timestamptz [not null]
+  rent_jpy bigint
+  management_fee_jpy bigint
+  deposit_jpy bigint
+  key_money_jpy bigint
+  guarantee_deposit_jpy bigint
+  depreciation_jpy bigint
+  brokerage_fee_amount_jpy bigint
+  other_initial_costs_total_jpy bigint
+  insurance_jpy bigint
+  parking_fee_jpy bigint
+  exclusive_area_m2 numeric
+  Note: '''
+    One eligible task per row, including unchanged-price observations.
+    Missing identity/time goes to rental_price_mart_rejects, never a shared unknown listing.
+    Amounts remain NULL when unknown. Undecided and dash fees are not zero.
+    Brokerage amount prefers explicit JPY, then months multiplied by rent.
+    Insurance covers its stated term; parking is not automatically part of rent.
+    Other initial costs is only the source subtotal, not total move-in cost.
+    Prices are non-additive across repeated observations.
+    Ratios and LAG/LEAD are computed in rental_price_observations view.
+  '''
+}
+
+Table mart.dim_station_label {
+  station_label_key text [pk]
+  source_id bigint
+  station_line text
+  station_name text
+  Note: 'Source-scoped line/name label, not a canonical physical station. All-zero key represents unparsed routes; source_id is NULL for that member.'
+}
+
+Table mart.bridge_observation_station_access {
+  task_id bigint [not null]
+  access_order bigint [not null]
+  station_label_key text [not null]
+  parse_status text [not null]
+  access_mode text
+  total_travel_minutes integer
+  Indexes {
+    (task_id, access_order) [pk]
+  }
+  Note: 'Preserve every source route including unparsed. No synthetic route for missing input, no primary station, no allocation weight. Use EXISTS or distinct task IDs before price aggregation.'
+}
+
+Ref: mart.fct_rental_price_observation.listing_version_key > mart.dim_rental_listing.listing_version_key
+Ref: mart.fct_rental_price_observation.geography_key > mart.dim_geography.geography_key
+Ref: mart.fct_rental_price_observation.observation_quality_key > mart.dim_observation_quality.observation_quality_key
+Ref: mart.fct_rental_price_observation.parsed_date_key > mart.dim_date.date_key
+Ref: mart.bridge_observation_station_access.task_id > mart.fct_rental_price_observation.task_id
+Ref: mart.bridge_observation_station_access.station_label_key > mart.dim_station_label.station_label_key
+
+// Views (not extra physical facts):
+// rental_price_observations: full history with previous price, delta, ratio and next observation.
+// rental_prices_latest_known: one latest task per source + code, not confirmed active stock.
+// rental_price_mart_rejects: missing identity/time and invalid records for audit.
+// As-of: filter timestamp <= cutoff, then DISTINCT ON source_id, code ordered timestamp/task DESC.

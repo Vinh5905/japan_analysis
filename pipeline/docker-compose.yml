@@ -82,9 +82,6 @@ services:
   warehouse-postgres:
     image: ${PIPELINE_POSTGRES_IMAGE:-postgres:16.3-bookworm}
     restart: unless-stopped
-    mem_limit: ${PIPELINE_POSTGRES_MEM_LIMIT:-512m}
-    cpus: "${PIPELINE_POSTGRES_CPUS:-0.40}"
-    pids_limit: ${PIPELINE_POSTGRES_PIDS_LIMIT:-256}
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
       POSTGRES_DB: ${AIRFLOW_DB:-airflow_metadata}
@@ -155,9 +152,6 @@ services:
     ports:
       - "${AIRFLOW_WEBSERVER_PORT:-8080}:8080"
     restart: unless-stopped
-    mem_limit: ${AIRFLOW_WEBSERVER_MEM_LIMIT:-512m}
-    cpus: "${AIRFLOW_WEBSERVER_CPUS:-0.50}"
-    pids_limit: ${AIRFLOW_WEBSERVER_PIDS_LIMIT:-512}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\""]
       interval: 20s
@@ -172,9 +166,6 @@ services:
       airflow-init:
         condition: service_completed_successfully
     restart: unless-stopped
-    mem_limit: ${AIRFLOW_SCHEDULER_MEM_LIMIT:-512m}
-    cpus: "${AIRFLOW_SCHEDULER_CPUS:-0.50}"
-    pids_limit: ${AIRFLOW_SCHEDULER_PIDS_LIMIT:-512}
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
       interval: 20s
@@ -184,12 +175,25 @@ services:
 
   dbt-runner:
     <<: *airflow-common
+    entrypoint: []
     command: dbt --version
     depends_on:
       warehouse-init:
         condition: service_completed_successfully
     profiles: ["tools"]
     restart: "no"
+
+  dbt-docs:
+    <<: *airflow-common
+    entrypoint: []
+    command: ["/bin/bash", "-c", "dbt docs generate && dbt docs serve --host 0.0.0.0 --port 8080"]
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${DBT_DOCS_PORT:-8081}:8080"
+    profiles: ["docs"]
+    restart: unless-stopped
 
 volumes:
   pipeline_postgres_data:

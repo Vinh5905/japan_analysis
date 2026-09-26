@@ -1,0 +1,125 @@
+version: 2
+
+models:
+  - name: int_suumo__mart_observations
+    description: "Eligible observations with conservative mart descriptors, explicit unknown fees and JSONB descriptor sets."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
+  - name: int_suumo__listing_timeline
+    description: "One row per eligible task mapped to a consecutive SCD2 version; rebuilt to handle late observations."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
+  - name: dim_rental_listing
+    description: "SCD2 listing descriptors and rental terms. Identity is source_id + SUUMO code, not physical property. Exact area is only in fact."
+    columns:
+      - name: listing_version_key
+        data_tests:
+          - not_null
+          - unique
+  - name: dim_geography
+    description: "Distinct normalized geographic profiles; missing levels remain NULL. No claim of a national location master."
+    columns:
+      - name: geography_key
+        data_tests:
+          - not_null
+          - unique
+  - name: dim_observation_quality
+    description: "Distinct quality profiles, separate from business descriptor versioning."
+    columns:
+      - name: observation_quality_key
+        data_tests:
+          - not_null
+          - unique
+  - name: dim_date
+    description: "Continuous Japan-local dates between first and last eligible observation."
+    columns:
+      - name: date_key
+        data_tests:
+          - not_null
+          - unique
+  - name: dim_station_label
+    description: "Source station labels, not canonical physical stations. All-zero key represents an unparsed route."
+    columns:
+      - name: station_label_key
+        data_tests:
+          - not_null
+          - unique
+  - name: fct_rental_price_observation
+    description: "One row per eligible parser task including unchanged prices. Asking prices are not revenue."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
+      - name: listing_version_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_rental_listing')
+              field: listing_version_key
+      - name: geography_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_geography')
+              field: geography_key
+      - name: observation_quality_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_observation_quality')
+              field: observation_quality_key
+      - name: parsed_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: parsed_at_utc
+        data_tests:
+          - not_null
+  - name: bridge_observation_station_access
+    description: "All access routes for eligible observations, including unparsed routes. Deduplicate tasks before aggregating prices by station."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('fct_rental_price_observation')
+              field: task_id
+      - name: station_label_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_station_label')
+              field: station_label_key
+      - name: access_order
+        data_tests:
+          - not_null
+  - name: rental_price_observations
+    description: "Full observation history with LAG/LEAD and calculated measures. Apply report period filters after this view."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
+  - name: rental_prices_latest_known
+    description: "Latest observed task per source + listing code. Does not assert currently active inventory."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
+  - name: rental_price_mart_rejects
+    description: "Ineligible records retained for audit; never assigned a shared unknown listing."
+    columns:
+      - name: task_id
+        data_tests:
+          - not_null
+          - unique
