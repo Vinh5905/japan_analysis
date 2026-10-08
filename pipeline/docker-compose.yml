@@ -6,6 +6,7 @@ name: ${PIPELINE_COMPOSE_PROJECT_NAME:-japan_analysis_pipeline}
 
 x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: "true"
   AIRFLOW__CORE__LOAD_EXAMPLES: "false"
   AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PIPELINE_POSTGRES_USER:-pipeline_admin}:${PIPELINE_POSTGRES_PASSWORD:-pipeline_password_change_me}@warehouse-postgres:5432/${AIRFLOW_DB:-airflow_metadata}
@@ -35,6 +36,7 @@ x-airflow-env: &airflow-env
   DBT_PROFILES_DIR: /opt/airflow/dbt
   SUUMO_LOAD_DAG_SCHEDULE: ${SUUMO_LOAD_DAG_SCHEDULE:-0 */3 * * *}
   SUUMO_LOAD_BATCH_LIMIT: ${SUUMO_LOAD_BATCH_LIMIT:-20}
+  SUUMO_DBT_CONCURRENCY: ${SUUMO_DBT_CONCURRENCY:-4}
 
 x-airflow-build: &airflow-build
   build:

@@ -63,6 +63,7 @@ AIRFLOW_ADMIN_PASSWORD=admin_change_me
 DBT_DOCS_PORT=8081
 SUUMO_LOAD_DAG_SCHEDULE=0 */3 * * *
 SUUMO_LOAD_BATCH_LIMIT=20
+SUUMO_DBT_CONCURRENCY=4
 ```
 
 `AIRFLOW_PYTHON_VERSION` nên để dạng major.minor như `3.12`. Nếu máy/base image
@@ -148,8 +149,13 @@ Start warehouse Postgres và Airflow:
 make -C pipeline up-d
 ```
 
-`up-d` trong `pipeline/Makefile` phụ thuộc `build`, nên chạy `up-d` cũng sẽ
-build image Airflow trước. Lệnh `build` riêng vẫn hữu ích khi muốn kiểm tra lỗi
+`up-d` và `recreate` build image rồi sinh manifest Airflow bằng `dbt parse`
+trước khi bật scheduler/webserver. Luồng `production-up-d` cũng làm bước này.
+Manifest riêng nằm ở `analytics/dbt/target/airflow/manifest.json`, thay thế nguyên tử
+và có fingerprint của model, macro, test, seed, cấu hình và warehouse environment.
+Scheduler chỉ đọc manifest, không gọi dbt hoặc warehouse lúc parse DAG.
+Nếu sửa dbt code/config, chạy `make -C pipeline dbt-airflow-manifest`; task từ chối
+thực thi khi fingerprint cũ. Manifest Charts/docs tại `target/manifest.json` được giữ riêng. Lệnh `build` riêng vẫn hữu ích khi muốn kiểm tra lỗi
 cài dependency trước khi start service.
 
 Mở Airflow UI:
@@ -406,8 +412,9 @@ ORDER BY task_id, access_order LIMIT 20;
 
 Mart SCD2, DBML, quy tắc giá/diện tích, late arrival và truy vấn as-of được mô tả
 trong [suumo-rental-price-mart.md](suumo-rental-price-mart.md).
-DAG chạy `dbt build` để kiểm tra dependency trước khi build consumer, sau đó
-`dbt test` kiểm tra toàn bộ. Lệnh local tương ứng: `make -C pipeline dbt-build`.
+DAG dùng Cosmos 1.15.1 `LOCAL`/subprocess để chạy từng model và test riêng,
+giữ dependency theo manifest. Lệnh full build thủ công vẫn là
+`make -C pipeline dbt-build`.
 BI chỉ refresh sau khi DAG thành công; dbt không publish nguyên tử toàn schema.
 
 ## Notebook raw seed và analytics
@@ -415,7 +422,114 @@ BI chỉ refresh sau khi DAG thành công; dbt không publish nguyên tử toàn
 Snapshot notebook 17.927 record được copy vào dbt seed
 `raw.suumo_parser_records_seed`. Chạy bootstrap một lần bằng
 `make -C pipeline dbt-seed-notebook`; staging union seed với raw vận hành và ưu
-tiên operational khi trùng `task_id`. DAG loại tag seed khỏi build thường xuyên
-để không reload file 18 MB sau mỗi batch. Warehouse mới phải seed trước lần DAG
+tiên operational khi trùng `task_id`. DAG tái sử dụng relation seed đã có, chỉ chạy các test seed;
+không reload file 18 MB sau mỗi batch. Warehouse mới phải seed trước lần DAG
 đầu tiên. Chi tiết ba data product BI nằm ở
 [`suumo-rental-analytics.md`](suumo-rental-analytics.md).
+
+## Task graph và chạy lại dbt
+
+DAG ID vẫn là `suumo_load_to_warehouse`. Nhóm `dbt.models` gồm `staging`,
+`intermediate`, `marts`, `analytics`: 26 model, mỗi model có `run` và các data
+test riêng gom vào `test` nếu có. Hai unit test chạy trước model tương ứng.
+Cosmos dùng `AFTER_EACH` với detached multi-parent tests. Test liên model có
+một task duy nhất, chờ tất cả input và chặn consumer chung khi các input đã là
+ancestor của consumer. Ba scenario test không có `ref()` nằm trong
+`standalone_tests`; raw và seed giữ đầy đủ test. Full run thực thi đúng 88 data
+test và 2 unit test, không chạy test lại sau toàn graph.
+
+Trigger DAG với JSON mặc định `{"mode": "load_and_transform", "model": null}`
+để load pending batches rồi transform. Không có batch thành công thì nhánh dbt
+skipped; batch lỗi làm task cuối `report_batch_failures` failed. Nếu có cả batch
+thành công và lỗi, dbt vẫn xử lý dữ liệu thành công trước khi task cuối báo lỗi.
+Lỗi loader không trả summary hoặc lỗi model/test cũng làm task cuối failed.
+
+Chạy toàn graph trên raw hiện có, không đọc/claim source batch:
+
+```json
+{"mode": "dbt_only"}
+```
+
+Chạy từ address và toàn bộ downstream:
+
+```json
+{"mode": "dbt_only", "model": "int_suumo__address"}
+```
+
+`model` chỉ nhận tên model enabled chính xác, chỉ dùng với `dbt_only`; không
+nhận selector hay SQL. Graph vẫn hiển thị đầy đủ và giữ task ID ổn định, các
+model ngoài lựa chọn skipped. Trước khi chạy, `prepare_transform` kiểm tra
+relation upstream tái sử dụng và báo rõ tên relation bị thiếu. Raw và seed
+phải được bootstrap; upstream không được build lại trong lần chạy từng phần.
+Task chọn dùng `none_failed`, cho phép upstream chủ động skipped nhưng vẫn
+chặn lỗi thực sự. Test liên quan đến bất kỳ model được chọn cũng được chạy.
+
+Trong **Grid/Graph**, lỗi SQL thuộc task `run`; lỗi chất lượng dữ liệu thuộc
+`test` hoặc `unit_*`. Sau khi sửa lỗi và refresh manifest nếu sửa dbt code,
+chọn **Clear** model/test lỗi với **Downstream**, gồm `report_batch_failures`,
+để chạy lại phần phụ thuộc trên run cũ. Nếu lỗi data test, có thể Clear riêng
+`test` và downstream mà không rebuild model đã đạt. Nếu cần rebuild model,
+Clear **run + test + downstream**; unit test failed phải Clear cả unit task.
+Nếu sửa SQL của model có unit test, Clear cả unit task hoặc chọn Clear toàn
+TaskGroup của model để kiểm chứng lại unit test trước build.
+Các task ID tổng hợp `dbt_run`/`dbt_test` chỉ thuộc lịch sử trước thay đổi.
+
+Mỗi task gọi `/opt/airflow/dbt_venv/bin/dbt` với một thread. Cosmos nằm trong
+Python Airflow 2.10.5; Core 1.11.15/postgres 1.11.0/Charts 0.8.0 vẫn ở venv
+riêng. `SUUMO_DBT_CONCURRENCY` mặc định 4 giới hạn số task đồng thời trong DAG;
+`max_active_runs=1`, retries mặc định 0. Không chạy writer dbt thủ công đồng
+thời với DAG vì publish warehouse chưa nguyên tử.
+LocalExecutor tạo interpreter mới cho mỗi task để không kế thừa connection
+metadata PostgreSQL từ process cha; cấu hình này cũng được dùng trong QA song song.
+
+Log task ghi node và command. SQL compile, `run_results.json`, `dbt.log` và
+`command.json` được lưu vào volume `pipeline/airflow/logs/dbt_artifacts/`, theo
+DAG ID/run ID/task ID/attempt (ID được URL-encode). Artifacts được copy trước
+khi Cosmos xóa thư mục tạm, kể cả invocation lỗi; compilation failure có thể
+không tạo `run_results.json` nhưng log/command vẫn được giữ. Chúng không ghi
+đè artifacts của task khác hoặc manifest Charts/docs.
+
+Kiểm tra graph và logic vận hành bằng:
+
+```bash
+make -C pipeline dbt-airflow-manifest
+make -C pipeline dbt-airflow-check
+```
+
+Khi triển khai local, pause DAG và chờ mọi run hết running/queued trước khi
+recreate scheduler/webserver; giữ warehouse/metadata volumes. Không dùng
+`clean-volumes` khi cập nhật graph. Production cần refresh manifest qua
+`production-up-d` hoặc cùng lệnh module `dbt_airflow.manifest` với production
+env. Thay đổi này chưa deploy VPS.
+
+### Nghiệm thu local ngày 2026-10-08
+
+- Import graph không có cycle; đủ 26 task model và 88 data test + 2 unit test,
+  mỗi test xuất hiện đúng một lần. Cả 10 unittest graph/loader đạt.
+- Full `dbt_only` thực thi đúng 116 node. Address thực thi 18 model,
+  76 data test và 2 unit test; tám model upstream skipped, không build lại.
+  LocalExecutor đạt tối đa bốn task dbt đồng thời, mỗi invocation một thread.
+- Đối chiếu count và hash toàn bộ hàng của 28 relation model/raw/seed trước và
+  sau full/address/Clear đều khớp. Raw có 19 record, history 17.946,
+  latest 17.395 listing và bridge 53.100 route. Smoke BI năm board đạt.
+- Lỗi SQL address và lỗi data test liên model history được gây trong bản sao
+  tạm: task tương ứng failed, consumer upstream_failed, task cuối/DAG failed.
+  Artifacts lỗi giữ command, log, run results và SQL compile. Clear phần lỗi
+  cùng downstream trên chính run cũ hoàn tất; task upstream đã đạt giữ nguyên
+  trạng thái và số attempt. Clear riêng test không rebuild model đã đạt.
+- Run không có batch mới skipped toàn nhánh dbt và success. Năm trường hợp
+  điều phối loader (không batch, thành công, toàn lỗi, hỗn hợp, lỗi không summary)
+  dùng summary giả lập để kiểm tra trạng thái DAG; kiểm tra transaction/upsert
+  của loader nằm trong unittest riêng. Không claim hay sửa batch source khi QA.
+- Webserver/scheduler local đã recreate với image mới, DAG unpaused và health
+  healthy. Graph/Grid hiển thị bốn tầng, 26 run operator và test riêng; log UI
+  ghi command cùng đường dẫn artifacts. Run scheduler thật `qa_local_cosmos_live`
+  chọn `rental_market_price_summary` đạt đúng 19 node model/test, dữ liệu khớp
+  baseline; run polling không có batch đạt success với nhánh dbt skipped.
+
+Script QA nằm ở `pipeline/tests/integration_dbt_airflow.py` và
+`integration_dbt_airflow_load_cases.py`; dừng scheduler và mọi writer dbt trước
+khi dùng script. Kết quả JSON/baseline nằm trong
+`analytics/dbt/target/airflow/qa/`, log ở `pipeline/airflow/logs/dbt_airflow_qa/`
+(đều Git ignored). Run QA lỗi được giữ trong lịch sử metadata; không xóa lịch sử
+để làm sạch Grid.

@@ -40,11 +40,11 @@ build: ## Build the local Airflow image with dbt and loader dependencies
 	$(COMPOSE_CMD) --profile build build airflow-image
 
 .PHONY: up-d
-up-d: build ## Build image, then start warehouse Postgres, Airflow webserver, and scheduler
+up-d: dbt-airflow-manifest ## Build image, then start warehouse Postgres, Airflow webserver, and scheduler
 	$(COMPOSE_CMD) up -d warehouse-postgres warehouse-init airflow-init airflow-webserver airflow-scheduler
 
 .PHONY: recreate
-recreate: build ## Recreate pipeline services so changed .env values are applied
+recreate: dbt-airflow-manifest ## Recreate pipeline services so changed .env values are applied
 	$(COMPOSE_CMD) up -d --force-recreate warehouse-postgres warehouse-init airflow-init airflow-webserver airflow-scheduler
 
 .PHONY: ps
@@ -127,6 +127,7 @@ production-config: production-check-env ## Validate production compose and env w
 .PHONY: production-up-d
 production-up-d: production-check-env ## Build and start the production pipeline with resource limits
 	$(PRODUCTION_COMPOSE_CMD) --profile build build airflow-image
+	$(PRODUCTION_COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m dbt_airflow.manifest
 	$(PRODUCTION_COMPOSE_CMD) up -d warehouse-postgres warehouse-init airflow-init airflow-webserver airflow-scheduler
 
 .PHONY: production-ps
@@ -158,3 +159,11 @@ dbt-seed-notebook: ## Load and test the 17,927-row notebook snapshot in raw sche
 .PHONY: dbt-check-repeatability
 dbt-check-repeatability: ## Rebuild existing mart and assert unchanged rows/keys
 	$(COMPOSE_CMD) run --rm --no-deps --entrypoint python dbt-runner /opt/airflow/pipeline/tests/verify_mart_repeatability.py
+
+.PHONY: dbt-airflow-manifest
+dbt-airflow-manifest: build ## Atomically refresh the static Airflow dbt graph (no warehouse queries)
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m dbt_airflow.manifest
+
+.PHONY: dbt-airflow-check
+dbt-airflow-check: ## Verify manifest task coverage, dependencies, selection and failure handling
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_dbt_airflow.py' -v
