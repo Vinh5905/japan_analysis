@@ -3,6 +3,12 @@ ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 FROM ${AIRFLOW_BASE_IMAGE}
 
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+USER airflow
+
 COPY pipeline/airflow/requirements.txt /requirements.txt
 COPY pipeline/airflow/dbt-requirements.txt /dbt-requirements.txt
 RUN case "${PYTHON_VERSION}" in \

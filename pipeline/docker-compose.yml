@@ -195,6 +195,27 @@ services:
     profiles: ["docs"]
     restart: unless-stopped
 
+  dbt-charts:
+    <<: *airflow-common
+    entrypoint: []
+    command:
+      - dct
+      - serve
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --project-dir
+      - /opt/airflow/dbt
+    working_dir: /opt/airflow/dbt
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    ports:
+      - "${DBT_CHARTS_PORT:-3000}:3000"
+    profiles: ["charts"]
+    restart: unless-stopped
+
 volumes:
   pipeline_postgres_data:
     driver: local

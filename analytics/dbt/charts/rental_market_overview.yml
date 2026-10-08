@@ -1,0 +1,293 @@
+title: Tổng quan thị trường cho thuê SUUMO
+notes: >
+  Dashboard điều hành cho người quản lý danh mục cho thuê. Mọi KPI và phân
+  khúc được tính lại từ population latest-known sau filter; không cộng median
+  hoặc percentile từ các dòng summary có grain chồng lấn.
+tags: [rental, market, executive, suumo]
+cache: 15m
+
+text: |
+  **Phạm vi:** listing được quan sát gần nhất trong warehouse, không khẳng định
+  listing còn hoạt động trên SUUMO. Số tiền là giá chào theo JPY. Filter tác
+  động đồng thời lên KPI và các phân tích bên dưới.
+
+variables:
+  locality:
+    label: Khu vực nhỏ
+    input: multiselect
+    column: analytics.rental_listing_latest.locality
+    notes: Lọc theo locality; để trống để xem toàn bộ 淀川区.
+  layout:
+    input: multiselect
+    column: analytics.rental_listing_latest.layout_normalized
+    notes: Lọc một hoặc nhiều layout đã chuẩn hóa, ví dụ 1K hoặc 1LDK.
+  area_band:
+    label: Nhóm diện tích
+    input: multiselect
+    column: analytics.rental_listing_latest.area_band
+    notes: Lọc theo nhóm diện tích chuẩn của mart.
+  building_type:
+    label: Loại tòa nhà
+    input: multiselect
+    column: analytics.rental_listing_latest.building_type
+    notes: Lọc theo loại bất động sản đã chuẩn hóa.
+
+queries:
+  market_headline:
+    notes: Một dòng KPI được tính trực tiếp trên listing latest-known sau filter.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          area_band_sort,
+          building_type,
+          rent_jpy,
+          rent_per_m2_jpy
+        from {{ ref('rental_listing_latest') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+      )
+      select
+        count(*)::bigint as listing_count,
+        count(rent_jpy)::bigint as rent_sample_size,
+        count(rent_jpy)::numeric / nullif(count(*), 0) as rent_coverage_ratio,
+        percentile_cont(0.5) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as median_rent_jpy,
+        percentile_cont(0.5) within group (order by rent_per_m2_jpy)
+          filter (where rent_per_m2_jpy is not null) as median_rent_per_m2_jpy
+      from filtered
+
+  locality_market:
+    notes: Locality đủ ít nhất 20 mẫu rent, phục vụ so sánh giá và độ sâu nguồn cung.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          area_band_sort,
+          building_type,
+          rent_jpy,
+          rent_per_m2_jpy
+        from {{ ref('rental_listing_latest') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+      )
+      select
+        locality,
+        count(*)::bigint as listing_count,
+        count(rent_jpy)::bigint as rent_sample_size,
+        percentile_cont(0.5) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as median_rent_jpy,
+        percentile_cont(0.5) within group (order by rent_per_m2_jpy)
+          filter (where rent_per_m2_jpy is not null) as median_rent_per_m2_jpy,
+        percentile_cont(0.25) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as rent_p25_jpy,
+        percentile_cont(0.75) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as rent_p75_jpy
+      from filtered
+      where locality is not null
+      group by locality
+      having count(rent_jpy) >= 20
+      order by median_rent_jpy desc, listing_count desc
+      limit 20
+
+  layout_mix:
+    notes: Tỷ trọng nguồn cung và median rent theo layout trong population đã lọc.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          area_band_sort,
+          building_type,
+          rent_jpy,
+          rent_per_m2_jpy
+        from {{ ref('rental_listing_latest') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+      ), grouped as (
+        select
+          coalesce(layout_normalized, 'Unknown') as layout_normalized,
+          count(*)::bigint as listing_count,
+          percentile_cont(0.5) within group (order by rent_jpy)
+            filter (where rent_jpy is not null) as median_rent_jpy
+        from filtered
+        group by 1
+      )
+      select
+        layout_normalized,
+        listing_count,
+        median_rent_jpy,
+        listing_count::numeric / nullif(sum(listing_count) over (), 0)
+          as listing_share_ratio
+      from grouped
+      order by listing_count desc
+      limit 12
+
+  area_band_market:
+    notes: Median rent và nguồn cung theo nhóm diện tích, giữ đúng thứ tự band của mart.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          area_band_sort,
+          building_type,
+          rent_jpy,
+          rent_per_m2_jpy
+        from {{ ref('rental_listing_latest') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+      )
+      select
+        area_band,
+        min(area_band_sort) as area_band_sort,
+        count(*)::bigint as listing_count,
+        percentile_cont(0.5) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as median_rent_jpy,
+        percentile_cont(0.5) within group (order by rent_per_m2_jpy)
+          filter (where rent_per_m2_jpy is not null) as median_rent_per_m2_jpy
+      from filtered
+      where area_band is not null
+      group by area_band
+      order by area_band_sort
+
+charts:
+  listing_count_kpi:
+    type: kpi
+    query: market_headline
+    label: Listing latest-known
+    value: listing_count
+    notes: Quy mô nguồn cung sau filter.
+    style:
+      value:
+        format: integer
+
+  median_rent_kpi:
+    type: kpi
+    query: market_headline
+    label: Median rent (JPY/tháng)
+    value: median_rent_jpy
+    notes: Median giá thuê, không phải doanh thu hoặc giá giao dịch.
+    style:
+      value:
+        format: integer
+
+  median_rent_m2_kpi:
+    type: kpi
+    query: market_headline
+    label: Median rent/m² (JPY)
+    value: median_rent_per_m2_jpy
+    notes: Median rent trên diện tích độc quyền với area lớn hơn 0.
+    style:
+      value:
+        format: integer
+
+  rent_coverage_kpi:
+    type: kpi
+    query: market_headline
+    label: Coverage giá thuê
+    value: rent_coverage_ratio
+    notes: Tỷ lệ listing có rent dùng được trong population hiện tại.
+    style:
+      value:
+        format: percent
+
+  locality_rent_chart:
+    type: bar
+    query: locality_market
+    title: Locality có median rent cao nhất
+    subtitle: Chỉ hiển thị nhóm có ít nhất 20 mẫu rent
+    x: locality
+    y: median_rent_jpy
+    sort:
+      by: median_rent_jpy
+      order: desc
+    notes: So sánh mặt bằng giá chào giữa locality đủ mẫu.
+    style:
+      number_format: integer
+      padding:
+        left: 65
+      axis_x:
+        labels:
+          align: right
+          max_width: 55
+
+  layout_supply_chart:
+    type: bar
+    query: layout_mix
+    title: Cơ cấu nguồn cung theo layout
+    subtitle: 12 layout nhiều listing nhất; tỷ trọng tính trên toàn bộ population đã lọc
+    x: layout_normalized
+    y: listing_share_ratio
+    sort:
+      by: listing_count
+      order: desc
+    notes: Cho biết phân khúc layout đang cạnh tranh nhiều nguồn cung nhất.
+    style:
+      number_format: percent
+
+  area_band_rent_chart:
+    type: bar
+    query: area_band_market
+    title: Median rent theo nhóm diện tích
+    x: area_band
+    y: median_rent_jpy
+    sort:
+      by: area_band_sort
+      order: asc
+    notes: Kiểm tra mức tăng giá tuyệt đối khi diện tích tăng.
+    style:
+      number_format: integer
+
+  locality_benchmark_table:
+    type: table
+    query: locality_market
+    title: Chi tiết benchmark locality
+    notes: Bảng P25, median, P75 và rent/m² để đọc chính xác thay vì suy từ bar.
+    style:
+      columns:
+        locality:
+          label: Locality
+        listing_count:
+          label: Listings
+          format: integer
+        rent_sample_size:
+          label: Rent samples
+          format: integer
+        rent_p25_jpy:
+          label: P25 rent
+          format: integer
+        median_rent_jpy:
+          label: Median rent
+          format: integer
+        rent_p75_jpy:
+          label: P75 rent
+          format: integer
+        median_rent_per_m2_jpy:
+          label: Median rent/m²
+          format: integer
+
+rows:
+  - notes: KPI headline cho population sau filter.
+    cols: [listing_count_kpi, median_rent_kpi, median_rent_m2_kpi, rent_coverage_kpi]
+  - notes: So sánh mặt bằng giá và cơ cấu nguồn cung.
+    cols:
+      - width: "58%"
+        rows: [locality_rent_chart]
+      - rows: [layout_supply_chart]
+  - area_band_rent_chart
+  - locality_benchmark_table

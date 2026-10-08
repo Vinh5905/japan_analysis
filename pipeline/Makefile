@@ -28,11 +28,12 @@ help: ## Show available pipeline commands
 	@printf "  make -C pipeline check-source-db\n"
 	@printf "  make -C pipeline dbt-run\n"
 	@printf "  make -C pipeline dbt-docs-up\n\n"
+	@printf "  make -C pipeline dbt-charts-up\n\n"
 	@printf "  make -C pipeline production-config PRODUCTION_ENV_FILE=.env.production.example\n\n"
 
 .PHONY: config
 config: ## Validate and render Airflow/dbt pipeline compose config
-	$(COMPOSE_CMD) --profile tools config
+	$(COMPOSE_CMD) --profile tools --profile charts config
 
 .PHONY: build
 build: ## Build the local Airflow image with dbt and loader dependencies
@@ -89,6 +90,31 @@ dbt-docs-down: ## Stop the dbt docs web server
 .PHONY: dbt-docs-logs
 dbt-docs-logs: ## Follow dbt docs generation/server logs
 	$(COMPOSE_CMD) --profile docs logs -f dbt-docs
+
+.PHONY: dbt-charts-validate
+dbt-charts-validate: build ## Validate board schema and EXPLAIN every query on the local warehouse
+	$(COMPOSE_CMD) --profile charts run --rm --no-deps dbt-charts dct validate charts/ --warehouse --project-dir /opt/airflow/dbt
+
+.PHONY: dbt-charts-up
+dbt-charts-up: build ## Start dbt Charts at http://localhost:3000
+	$(COMPOSE_CMD) --profile charts up -d dbt-charts
+
+.PHONY: dbt-charts-smoke
+dbt-charts-smoke: build ## Render all boards and verify BI population/filter semantics (read-only)
+	$(COMPOSE_CMD) --profile charts run --rm --no-deps dbt-charts /opt/airflow/dbt_venv/bin/python /opt/airflow/pipeline/tests/verify_dbt_charts.py
+
+.PHONY: dbt-charts-down
+dbt-charts-down: ## Stop the local dbt Charts server
+	$(COMPOSE_CMD) --profile charts stop dbt-charts
+
+.PHONY: dbt-charts-logs
+dbt-charts-logs: ## Follow dbt Charts server and query logs
+	$(COMPOSE_CMD) --profile charts logs -f dbt-charts
+
+.PHONY: dbt-charts-render
+dbt-charts-render: build ## Render one board; pass board=charts/file.yml format=html
+	mkdir -p ../analytics/dbt/renders
+	$(COMPOSE_CMD) --profile charts run --rm --no-deps dbt-charts dct render $(or $(board),charts/rental_market_overview.yml) --format $(or $(format),html) --project-dir /opt/airflow/dbt
 
 .PHONY: production-check-env
 production-check-env:

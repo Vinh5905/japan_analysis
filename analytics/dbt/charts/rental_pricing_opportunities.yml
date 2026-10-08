@@ -1,0 +1,321 @@
+title: Cơ hội định giá so với listing tương đương
+notes: >
+  Board phân tích từng listing so với peer median từ
+  rental_listing_comparable_benchmark. Peer group hẹp nhất phải có ít nhất năm
+  mẫu rent và hiện bao gồm chính listing đang chấm điểm.
+tags: [rental, pricing, benchmark, opportunity]
+cache: 15m
+
+text: |
+  **Cách đọc:** “thấp hơn peer” là tín hiệu cần xem thêm, không đồng nghĩa căn
+  hộ đang rẻ hoặc là cơ hội đầu tư. Dữ liệu chưa có đầy đủ chất lượng nội thất,
+  ưu đãi, tình trạng trống và điều kiện đàm phán.
+
+variables:
+  locality:
+    label: Khu vực nhỏ
+    input: multiselect
+    column: analytics.rental_listing_comparable_benchmark.locality
+    notes: Giới hạn peer opportunities theo locality.
+  layout:
+    input: multiselect
+    column: analytics.rental_listing_comparable_benchmark.layout_normalized
+    notes: Giới hạn theo layout đã chuẩn hóa.
+  area_band:
+    label: Nhóm diện tích
+    input: multiselect
+    column: analytics.rental_listing_comparable_benchmark.area_band
+    notes: Giới hạn theo nhóm diện tích của mart.
+  building_type:
+    label: Loại tòa nhà
+    input: multiselect
+    column: analytics.rental_listing_comparable_benchmark.building_type
+    notes: Giới hạn theo loại bất động sản.
+
+queries:
+  pricing_headline:
+    notes: Một dòng KPI về độ phủ benchmark và tỷ lệ listing lệch peer median.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          building_type,
+          rent_position,
+          rent_vs_peer_median_pct
+        from {{ ref('rental_listing_comparable_benchmark') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+      )
+      select
+        count(*) filter (where rent_position <> 'not_scored')::bigint
+          as scored_listing_count,
+        count(*) filter (where rent_position <> 'not_scored')::numeric
+          / nullif(count(*), 0) as benchmark_coverage_ratio,
+        count(*) filter (where rent_position = 'below_peer_median_10pct')::numeric
+          / nullif(count(*) filter (where rent_position <> 'not_scored'), 0)
+          as below_peer_share_ratio,
+        count(*) filter (where rent_position = 'above_peer_median_10pct')::numeric
+          / nullif(count(*) filter (where rent_position <> 'not_scored'), 0)
+          as above_peer_share_ratio
+      from filtered
+
+  position_mix:
+    notes: Ba nhóm vị thế giá có thể chấm điểm, không đưa not_scored vào denominator.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          building_type,
+          rent_position,
+          rent_vs_peer_median_pct
+        from {{ ref('rental_listing_comparable_benchmark') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+          and rent_position <> 'not_scored'
+      ), grouped as (
+        select
+          case rent_position
+            when 'below_peer_median_10pct' then 'Thấp hơn peer ≥10%'
+            when 'within_10pct_of_peer_median' then 'Trong khoảng ±10%'
+            when 'above_peer_median_10pct' then 'Cao hơn peer ≥10%'
+          end as price_position,
+          case rent_position
+            when 'below_peer_median_10pct' then 1
+            when 'within_10pct_of_peer_median' then 2
+            when 'above_peer_median_10pct' then 3
+          end as position_sort,
+          count(*)::bigint as listing_count
+        from filtered
+        group by rent_position
+      )
+      select
+        price_position,
+        position_sort,
+        listing_count,
+        listing_count::numeric / nullif(sum(listing_count) over (), 0)
+          as listing_share_ratio
+      from grouped
+      order by position_sort
+
+  locality_opportunity:
+    notes: Locality có ít nhất 30 listing chấm điểm, xếp theo tỷ lệ thấp hơn peer median.
+    sql: |
+      with filtered as (
+        select
+          locality,
+          layout_normalized,
+          area_band,
+          building_type,
+          rent_position,
+          rent_vs_peer_median_pct
+        from {{ ref('rental_listing_comparable_benchmark') }}
+        where {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and {{ filter('building_type', building_type) }}
+          and rent_position <> 'not_scored'
+      )
+      select
+        locality,
+        count(*)::bigint as scored_listing_count,
+        count(*) filter (where rent_position = 'below_peer_median_10pct')::bigint
+          as below_peer_count,
+        count(*) filter (where rent_position = 'below_peer_median_10pct')::numeric
+          / nullif(count(*), 0) as below_peer_share_ratio,
+        avg(rent_vs_peer_median_pct)::numeric / 100.0 as average_gap_ratio
+      from filtered
+      where locality is not null
+      group by locality
+      having count(*) >= 30
+      order by below_peer_share_ratio desc, scored_listing_count desc
+      limit 20
+
+  peer_scatter_sample:
+    notes: Mẫu xác định 3000 listing đã chấm điểm để xem phân tán actual rent và peer median.
+    sql: |
+      select
+        task_id,
+        peer_median_rent_jpy,
+        rent_jpy,
+        peer_sample_size,
+        case rent_position
+          when 'below_peer_median_10pct' then 'Thấp hơn peer ≥10%'
+          when 'within_10pct_of_peer_median' then 'Trong khoảng ±10%'
+          when 'above_peer_median_10pct' then 'Cao hơn peer ≥10%'
+        end as price_position
+      from {{ ref('rental_listing_comparable_benchmark') }}
+      where {{ filter('locality', locality) }}
+        and {{ filter('layout_normalized', layout) }}
+        and {{ filter('area_band', area_band) }}
+        and {{ filter('building_type', building_type) }}
+        and rent_position <> 'not_scored'
+        and peer_median_rent_jpy is not null
+        and rent_jpy is not null
+      order by md5(task_id::text)
+      limit 3000
+
+  below_peer_detail:
+    notes: Ba mươi listing có rent thấp hơn peer median nhiều nhất trong filter hiện tại.
+    sql: |
+      select
+        'nc_' || suumo_property_code as suumo_property_code,
+        locality,
+        layout_normalized,
+        area_band,
+        building_type,
+        exclusive_area_m2,
+        rent_jpy,
+        peer_median_rent_jpy,
+        rent_vs_peer_median_jpy,
+        rent_vs_peer_median_pct::numeric / 100.0 as rent_vs_peer_median_ratio,
+        peer_sample_size,
+        benchmark_tier
+      from {{ ref('rental_listing_comparable_benchmark') }}
+      where {{ filter('locality', locality) }}
+        and {{ filter('layout_normalized', layout) }}
+        and {{ filter('area_band', area_band) }}
+        and {{ filter('building_type', building_type) }}
+        and rent_position = 'below_peer_median_10pct'
+      order by rent_vs_peer_median_pct asc, peer_sample_size desc
+      limit 30
+
+charts:
+  scored_listings_kpi:
+    type: kpi
+    query: pricing_headline
+    label: Listing được benchmark
+    value: scored_listing_count
+    notes: Số listing đã chọn được peer tier tối thiểu năm mẫu.
+    style:
+      value:
+        format: integer
+
+  benchmark_coverage_kpi:
+    type: kpi
+    query: pricing_headline
+    label: Coverage benchmark
+    value: benchmark_coverage_ratio
+    notes: Tỷ lệ listing có thể chấm điểm so với toàn population sau filter.
+    style:
+      value:
+        format: percent
+
+  below_peer_share_kpi:
+    type: kpi
+    query: pricing_headline
+    label: Thấp hơn peer ≥10%
+    value: below_peer_share_ratio
+    notes: Tỷ lệ trong population đã chấm điểm.
+    style:
+      value:
+        format: percent
+
+  above_peer_share_kpi:
+    type: kpi
+    query: pricing_headline
+    label: Cao hơn peer ≥10%
+    value: above_peer_share_ratio
+    notes: Tỷ lệ trong population đã chấm điểm.
+    style:
+      value:
+        format: percent
+
+  price_position_chart:
+    type: bar
+    query: position_mix
+    title: Phân bố vị thế giá so với peer median
+    x: price_position
+    y: listing_share_ratio
+    sort:
+      by: position_sort
+      order: asc
+    notes: Cho biết phần lớn danh mục nằm trong band trung tâm hay lệch mạnh.
+    style:
+      number_format: percent
+
+  locality_opportunity_chart:
+    type: bar
+    query: locality_opportunity
+    title: Locality có nhiều listing thấp hơn peer
+    subtitle: Chỉ nhóm có ít nhất 30 listing được benchmark
+    x: locality
+    y: below_peer_share_ratio
+    sort:
+      by: below_peer_share_ratio
+      order: desc
+    notes: Dùng để tìm locality cần drill down vào danh sách listing cụ thể.
+    style:
+      number_format: percent
+      padding:
+        left: 65
+      axis_x:
+        labels:
+          align: right
+          max_width: 55
+
+  peer_rent_scatter:
+    type: scatter
+    query: peer_scatter_sample
+    title: Actual rent so với peer median
+    subtitle: Mẫu xác định tối đa 3000 listing; màu biểu diễn vị thế giá
+    x: peer_median_rent_jpy
+    y: rent_jpy
+    color: price_position
+    notes: Điểm xa đường cân bằng ngầm x=y là ứng viên cần kiểm tra chi tiết.
+    style:
+      number_format: integer
+      axis_x:
+        labels:
+          format: integer
+
+  below_peer_table:
+    type: table
+    query: below_peer_detail
+    title: Listing lệch thấp nhất so với peer median
+    notes: Danh sách hành động để kiểm tra nội thất, điều kiện thuê và tính hợp lệ của peer.
+    style:
+      columns:
+        suumo_property_code:
+          label: SUUMO code
+        locality:
+          label: Locality
+        layout_normalized:
+          label: Layout
+        area_band:
+          label: Area band
+        building_type:
+          label: Building type
+        exclusive_area_m2:
+          label: Area m²
+          format: number_full
+        rent_jpy:
+          label: Rent JPY
+          format: integer
+        peer_median_rent_jpy:
+          label: Peer median JPY
+          format: integer
+        rent_vs_peer_median_jpy:
+          label: Gap JPY
+          format: integer
+        rent_vs_peer_median_ratio:
+          label: Gap %
+          format: percent_delta
+        peer_sample_size:
+          label: Peer n
+          format: integer
+
+rows:
+  - notes: KPI coverage và hai phía của benchmark.
+    cols: [scored_listings_kpi, benchmark_coverage_kpi, below_peer_share_kpi, above_peer_share_kpi]
+  - notes: Distribution tổng thể và locality cần chú ý.
+    cols: [price_position_chart, locality_opportunity_chart]
+  - peer_rent_scatter
+  - below_peer_table

@@ -72,6 +72,9 @@ cho warehouse, Airflow webserver hoặc scheduler; Airflow dùng số worker m�
 định. Các biến resource limit cũ trong `pipeline/.env` không còn tác dụng và
 có thể xóa.
 
+`DBT_CHARTS_PORT` mặc định là `3000` cho local. Production example dùng port
+riêng `13000`; service Charts chỉ chạy khi bật Compose profile `charts`.
+
 Production dùng `pipeline/.env.production` và Compose override riêng:
 
 ```bash
@@ -181,6 +184,59 @@ model thay đổi, dừng rồi bật lại service để tạo catalog mới.
 make -C pipeline dbt-docs-down
 ```
 
+## Xem dashboard dbt Charts
+
+Runtime dbt trong Airflow image pin chung ba package tương thích:
+
+```text
+dbt-core==1.11.15
+dbt-postgres==1.11.0
+dbt-charts[postgresql]==0.8.0
+```
+
+Project tiếp tục dùng dbt Core 1.x; không cần dbt v2 hoặc virtualenv Charts
+riêng. Board và config nằm trong `analytics/dbt/charts/` và
+`analytics/dbt/dbt_charts.yml`.
+
+Sau khi mart/analytics đã build thành công, validate YAML và EXPLAIN query:
+
+```bash
+make -C pipeline dbt-charts-validate
+make -C pipeline dbt-charts-smoke
+```
+
+Bật local server:
+
+```bash
+make -C pipeline dbt-charts-up
+```
+
+Mở `http://localhost:3000` hoặc port `DBT_CHARTS_PORT` trong
+`pipeline/.env`. Xem log và dừng service:
+
+```bash
+make -C pipeline dbt-charts-logs
+make -C pipeline dbt-charts-down
+```
+
+Render một board ra file HTML trong `analytics/dbt/renders/`:
+
+```bash
+make -C pipeline dbt-charts-render \
+  board=charts/rental_market_overview.yml format=html
+```
+
+Các board query warehouse bằng profile `japan_analysis`. Chúng dùng hostname
+`warehouse-postgres` trong container và đọc `target/manifest.json` do dbt Core
+tạo để resolve `ref()`.
+
+Smoke test thực thi query read-only và kiểm tra population/filter/empty state,
+grain KPI và distinct count station. EXPLAIN của PostgreSQL không trả result
+schema nên warehouse validation vẫn có warning về column check; render/smoke
+là bước kiểm tra thực tế. Xem `docs/suumo-rental-bi.md` về ý nghĩa các board,
+insight, cache refresh và kết quả kiểm chứng. Image có `fonts-noto-cjk` để xuất
+nhãn tiếng Nhật đúng trong PNG/PDF.
+
 ## Event notify từ crawler
 
 Airflow có fallback schedule, nhưng có thể trigger ngay khi `suumo_page` tạo batch
@@ -221,9 +277,10 @@ dbt project nằm ở:
 analytics/dbt
 ```
 
-dbt được cài trong virtualenv riêng `/opt/airflow/dbt_venv` bên trong Airflow
-image để tránh conflict dependency với Airflow. Dockerfile thêm virtualenv này
-vào `PATH`, nên trong container vẫn gọi được lệnh `dbt` trực tiếp.
+dbt và dbt Charts được cài trong virtualenv riêng `/opt/airflow/dbt_venv` bên
+trong Airflow image để tránh conflict dependency với Airflow. Dockerfile thêm
+virtualenv này vào `PATH`, nên trong container gọi trực tiếp được cả `dbt` và
+`dct`.
 
 Các thành phần hiện tại:
 

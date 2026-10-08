@@ -1,0 +1,20 @@
+sources:
+  warehouse:
+    type: dbt_profile
+    profile: japan_analysis
+    target: dev
+    profiles_dir: .
+
+cache:
+  ttl: 15m
+
+execution:
+  max_workers: 4
+  max_query_duration_seconds: 60
+  max_rows: 5000
+  max_result_bytes: 10485760
+
+server:
+  port: 3000
+  nav: true
+  debug: true

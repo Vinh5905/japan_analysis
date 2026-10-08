@@ -1,0 +1,261 @@
+title: Premium giá theo đặc điểm bất động sản
+notes: >
+  Board mô tả mối liên hệ giữa đặc điểm listing và giá sau khi giữ cố định
+  locality, layout và area band. Chỉ các nhóm đủ ít nhất năm mẫu feature và
+  mười mẫu stratum mới đi vào headline.
+tags: [rental, feature, pricing, segmentation]
+cache: 15m
+
+text: |
+  Premium là chênh lệch median của nhóm đặc điểm so với median toàn stratum.
+  Đây là quan hệ mô tả, không chứng minh đặc điểm đó gây ra mức tăng hoặc giảm
+  giá. Ưu tiên đọc cùng sample size và số stratum.
+
+variables:
+  feature_name:
+    label: Nhóm đặc điểm
+    input: select
+    default: building_age_band
+    required: true
+    options:
+      static:
+        - building_age_band
+        - floor_band
+        - direction
+        - structure
+        - building_type
+    notes: Chọn một domain đặc điểm để tránh trộn các population khác nhau.
+  locality:
+    label: Khu vực nhỏ
+    input: multiselect
+    column: analytics.rental_feature_price_summary.locality
+    notes: Giới hạn feature comparison theo locality.
+  layout:
+    input: multiselect
+    column: analytics.rental_feature_price_summary.layout_normalized
+    notes: Giới hạn feature comparison theo layout.
+  area_band:
+    label: Nhóm diện tích
+    input: multiselect
+    column: analytics.rental_feature_price_summary.area_band
+    notes: Giới hạn feature comparison theo area band.
+
+queries:
+  feature_headline:
+    notes: Một dòng KPI về sample, số segment và độ lớn premium tuyệt đối có trọng số.
+    sql: |
+      with filtered as (
+        select
+          feature_name,
+          locality,
+          layout_normalized,
+          area_band,
+          feature_value,
+          rent_sample_size,
+          rent_premium_vs_stratum_pct,
+          has_reliable_rent_sample
+        from {{ ref('rental_feature_price_summary') }}
+        where {{ filter('feature_name', feature_name) }}
+          and {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and has_reliable_rent_sample
+      )
+      select
+        sum(rent_sample_size)::bigint as reliable_sample_count,
+        count(*)::bigint as reliable_segment_count,
+        count(distinct feature_value)::bigint as feature_value_count,
+        sum(abs(rent_premium_vs_stratum_pct) * rent_sample_size)
+          / nullif(sum(rent_sample_size), 0) / 100.0
+          as weighted_absolute_premium_ratio
+      from filtered
+
+  feature_premium:
+    notes: Premium rent và rent/m² có trọng số sample, một dòng mỗi feature value.
+    sql: |
+      with filtered as (
+        select
+          feature_name,
+          locality,
+          layout_normalized,
+          area_band,
+          feature_value,
+          feature_sort,
+          rent_sample_size,
+          rent_premium_vs_stratum_pct,
+          rent_per_m2_sample_size,
+          rent_per_m2_premium_vs_stratum_pct,
+          has_reliable_rent_sample
+        from {{ ref('rental_feature_price_summary') }}
+        where {{ filter('feature_name', feature_name) }}
+          and {{ filter('locality', locality) }}
+          and {{ filter('layout_normalized', layout) }}
+          and {{ filter('area_band', area_band) }}
+          and has_reliable_rent_sample
+      )
+      select
+        feature_value,
+        min(feature_sort) as feature_sort,
+        sum(rent_sample_size)::bigint as rent_sample_size,
+        count(*)::bigint as stratum_count,
+        sum(rent_premium_vs_stratum_pct * rent_sample_size)
+          / nullif(sum(rent_sample_size), 0) / 100.0
+          as weighted_rent_premium_ratio,
+        sum(rent_per_m2_premium_vs_stratum_pct * rent_per_m2_sample_size)
+          / nullif(
+              sum(rent_per_m2_sample_size) filter (
+                where rent_per_m2_premium_vs_stratum_pct is not null
+              ),
+              0
+            ) / 100.0
+          as weighted_rent_per_m2_premium_ratio
+      from filtered
+      group by feature_value
+      order by feature_sort, rent_sample_size desc
+
+  feature_segment_detail:
+    notes: Ba mươi segment có premium tuyệt đối lớn nhất và đủ reliability threshold.
+    sql: |
+      select
+        locality,
+        layout_normalized,
+        area_band,
+        feature_value,
+        rent_sample_size,
+        stratum_rent_sample_size,
+        rent_median_jpy,
+        stratum_median_rent_jpy,
+        rent_premium_vs_stratum_pct::numeric / 100.0 as rent_premium_ratio,
+        rent_per_m2_premium_vs_stratum_pct::numeric / 100.0
+          as rent_per_m2_premium_ratio
+      from {{ ref('rental_feature_price_summary') }}
+      where {{ filter('feature_name', feature_name) }}
+        and {{ filter('locality', locality) }}
+        and {{ filter('layout_normalized', layout) }}
+        and {{ filter('area_band', area_band) }}
+        and has_reliable_rent_sample
+      order by abs(rent_premium_vs_stratum_pct) desc,
+               rent_sample_size desc
+      limit 30
+
+charts:
+  reliable_sample_kpi:
+    type: kpi
+    query: feature_headline
+    label: Mẫu rent đủ tin cậy
+    value: reliable_sample_count
+    notes: Tổng sample size của feature groups đạt threshold trong filter hiện tại.
+    style:
+      value:
+        format: integer
+
+  reliable_segment_kpi:
+    type: kpi
+    query: feature_headline
+    label: Segment đủ tin cậy
+    value: reliable_segment_count
+    notes: Số tổ hợp locality-layout-area-feature đạt threshold.
+    style:
+      value:
+        format: integer
+
+  feature_value_count_kpi:
+    type: kpi
+    query: feature_headline
+    label: Giá trị feature được so sánh
+    value: feature_value_count
+    notes: Số feature value còn lại sau filter và reliability gate.
+    style:
+      value:
+        format: integer
+
+  signal_strength_kpi:
+    type: kpi
+    query: feature_headline
+    label: Premium tuyệt đối bình quân
+    value: weighted_absolute_premium_ratio
+    notes: Độ lớn chênh lệch tuyệt đối có trọng số, không biểu diễn hướng.
+    style:
+      value:
+        format: percent
+
+  rent_premium_chart:
+    type: bar
+    query: feature_premium
+    title: Premium median rent so với stratum
+    x: feature_value
+    y: weighted_rent_premium_ratio
+    sort:
+      by: feature_sort
+      order: asc
+    notes: Premium giá thuê có trọng số theo sample size của từng stratum.
+    style:
+      number_format: percent_delta
+
+  rent_m2_premium_chart:
+    type: bar
+    query: feature_premium
+    title: Premium median rent/m² so với stratum
+    x: feature_value
+    y: weighted_rent_per_m2_premium_ratio
+    sort:
+      by: feature_sort
+      order: asc
+    notes: Kiểm tra premium còn tồn tại sau khi chuẩn hóa theo diện tích hay không.
+    style:
+      number_format: percent_delta
+
+  feature_sample_chart:
+    type: bar
+    query: feature_premium
+    title: Độ sâu mẫu theo giá trị feature
+    x: feature_value
+    y: rent_sample_size
+    sort:
+      by: feature_sort
+      order: asc
+    notes: Dùng để đánh giá độ ổn định trước khi diễn giải premium.
+    style:
+      number_format: integer
+
+  feature_segment_table:
+    type: table
+    query: feature_segment_detail
+    title: Segment có premium mạnh nhất
+    notes: Drill down vào tổ hợp cụ thể để tránh diễn giải trung bình toàn thị trường.
+    style:
+      columns:
+        locality:
+          label: Locality
+        layout_normalized:
+          label: Layout
+        area_band:
+          label: Area band
+        feature_value:
+          label: Feature value
+        rent_sample_size:
+          label: Feature n
+          format: integer
+        stratum_rent_sample_size:
+          label: Stratum n
+          format: integer
+        rent_median_jpy:
+          label: Feature median JPY
+          format: integer
+        stratum_median_rent_jpy:
+          label: Stratum median JPY
+          format: integer
+        rent_premium_ratio:
+          label: Rent premium
+          format: percent_delta
+        rent_per_m2_premium_ratio:
+          label: Rent/m² premium
+          format: percent_delta
+
+rows:
+  - notes: Reliability và độ lớn tín hiệu của feature đã chọn.
+    cols: [reliable_sample_kpi, reliable_segment_kpi, feature_value_count_kpi, signal_strength_kpi]
+  - notes: Hai cách nhìn premium tuyệt đối và theo m².
+    cols: [rent_premium_chart, rent_m2_premium_chart]
+  - feature_sample_chart
+  - feature_segment_table

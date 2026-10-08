@@ -1,0 +1,241 @@
+title: Thị trường cho thuê theo ga và tuyến
+notes: >
+  Board station dùng bridge một-nhiều. Mỗi listing-ga chỉ giữ route nhanh nhất
+  trước khi tổng hợp, nên cùng listing không bị nhân đôi trong một ga. Một
+  listing vẫn có thể thuộc nhiều ga khác nhau và không được cộng tổng giữa ga.
+tags: [rental, station, transit, accessibility]
+cache: 15m
+
+text: |
+  **Grain:** một listing có thể xuất hiện ở nhiều ga. `listing_count` có nghĩa
+  trong từng ga; tổng các hàng station sẽ lớn hơn số listing duy nhất. Station
+  label là nhãn theo source, chưa phải station master chuẩn hóa toàn Nhật.
+
+variables:
+  station_line:
+    label: Tuyến
+    input: multiselect
+    column: mart.dim_station_label.station_line
+    notes: Lọc một hoặc nhiều tuyến đã parse.
+  access_mode:
+    label: Hình thức tiếp cận
+    input: multiselect
+    column: mart.bridge_observation_station_access.access_mode
+    notes: Ví dụ đi bộ, xe buýt hoặc hình thức access khác trong source.
+  max_travel_minutes:
+    label: Thời gian tiếp cận tối đa
+    input: slider
+    data_type: number
+    default: 20
+    min: 1
+    max: 60
+    step: 1
+    notes: Giới hạn route theo tổng phút di chuyển; mặc định 20 phút.
+
+queries:
+  station_headline:
+    notes: KPI distinct listing, station và median travel/rent sau filter route.
+    sql: |
+      with listing_station as (
+        select distinct on (b.task_id, b.station_label_key)
+          b.task_id,
+          b.station_label_key,
+          b.access_mode,
+          b.total_travel_minutes,
+          d.station_line,
+          d.station_name,
+          l.rent_jpy,
+          l.rent_per_m2_jpy
+        from {{ ref('bridge_observation_station_access') }} b
+        join {{ ref('dim_station_label') }} d
+          on d.station_label_key = b.station_label_key
+        join {{ ref('rental_listing_latest') }} l
+          on l.task_id = b.task_id
+        where b.parse_status = 'parsed'
+          and {{ filter('d.station_line', station_line) }}
+          and {{ filter('b.access_mode', access_mode) }}
+          and {{ filter('b.total_travel_minutes', max_travel_minutes, '<=') }}
+        order by b.task_id, b.station_label_key,
+                 b.total_travel_minutes nulls last, b.access_order
+      )
+      select
+        count(distinct task_id)::bigint as accessible_listing_count,
+        count(distinct station_label_key)::bigint as station_count,
+        percentile_cont(0.5) within group (order by total_travel_minutes)
+          filter (where total_travel_minutes is not null) as median_travel_minutes,
+        percentile_cont(0.5) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as median_rent_jpy
+      from listing_station
+
+  station_market:
+    notes: Một dòng mỗi line-station, dedup trong ga, tối thiểu 20 listing; lấy 25 ga nhiều listing nhất.
+    sql: |
+      with listing_station as (
+        select distinct on (b.task_id, b.station_label_key)
+          b.task_id,
+          b.station_label_key,
+          b.access_mode,
+          b.total_travel_minutes,
+          d.station_line,
+          d.station_name,
+          l.rent_jpy,
+          l.rent_per_m2_jpy
+        from {{ ref('bridge_observation_station_access') }} b
+        join {{ ref('dim_station_label') }} d
+          on d.station_label_key = b.station_label_key
+        join {{ ref('rental_listing_latest') }} l
+          on l.task_id = b.task_id
+        where b.parse_status = 'parsed'
+          and {{ filter('d.station_line', station_line) }}
+          and {{ filter('b.access_mode', access_mode) }}
+          and {{ filter('b.total_travel_minutes', max_travel_minutes, '<=') }}
+        order by b.task_id, b.station_label_key,
+                 b.total_travel_minutes nulls last, b.access_order
+      )
+      select
+        station_line,
+        station_name,
+        station_line || ' · ' || station_name as station_label,
+        count(*)::bigint as listing_count,
+        percentile_cont(0.5) within group (order by rent_jpy)
+          filter (where rent_jpy is not null) as median_rent_jpy,
+        percentile_cont(0.5) within group (order by rent_per_m2_jpy)
+          filter (where rent_per_m2_jpy is not null) as median_rent_per_m2_jpy,
+        percentile_cont(0.5) within group (order by total_travel_minutes)
+          filter (where total_travel_minutes is not null) as median_travel_minutes
+      from listing_station
+      group by station_line, station_name
+      having count(*) >= 20
+      order by listing_count desc
+      limit 25
+
+charts:
+  accessible_listings_kpi:
+    type: kpi
+    query: station_headline
+    label: Listing tiếp cận được
+    value: accessible_listing_count
+    notes: Distinct latest-known listing có ít nhất một station route thỏa filter.
+    style:
+      value:
+        format: integer
+
+  station_count_kpi:
+    type: kpi
+    query: station_headline
+    label: Ga đủ điều kiện
+    value: station_count
+    notes: Distinct station labels có route thỏa filter, trước threshold chart 20 mẫu.
+    style:
+      value:
+        format: integer
+
+  median_travel_kpi:
+    type: kpi
+    query: station_headline
+    label: Median thời gian tiếp cận (phút)
+    value: median_travel_minutes
+    notes: Median của route nhanh nhất cho từng listing-ga.
+    style:
+      value:
+        format: number
+
+  station_median_rent_kpi:
+    type: kpi
+    query: station_headline
+    label: Median rent qua station routes
+    value: median_rent_jpy
+    notes: Một listing có thể đóng góp vào nhiều ga; KPI này mô tả route population.
+    style:
+      value:
+        format: integer
+
+  station_inventory_chart:
+    type: bar
+    query: station_market
+    title: Nguồn cung theo ga
+    subtitle: 25 ga nhiều listing nhất; mỗi ga có ít nhất 20 listing
+    x: station_label
+    y: listing_count
+    sort:
+      by: listing_count
+      order: desc
+    notes: Đo độ sâu nguồn cung quanh từng station label.
+    style:
+      number_format: integer
+      padding:
+        left: 175
+      axis_x:
+        labels:
+          align: right
+          max_width: 165
+
+  station_rent_chart:
+    type: bar
+    query: station_market
+    title: Median rent theo ga
+    subtitle: Trong 25 ga nhiều listing nhất; mỗi ga có ít nhất 20 listing
+    x: station_label
+    y: median_rent_jpy
+    sort:
+      by: median_rent_jpy
+      order: desc
+    notes: So sánh giá chào tuyệt đối giữa các ga đủ mẫu.
+    style:
+      number_format: integer
+      padding:
+        left: 175
+      axis_x:
+        labels:
+          align: right
+          max_width: 165
+
+  travel_price_scatter:
+    type: scatter
+    query: station_market
+    title: Thời gian tiếp cận và median rent
+    subtitle: 25 ga nhiều listing nhất; kích thước là listing count, màu là tuyến
+    x: median_travel_minutes
+    y: median_rent_jpy
+    color: station_line
+    size: listing_count
+    notes: Tìm station vừa gần vừa có mức rent khác biệt, không suy diễn nhân quả.
+    style:
+      number_format: integer
+      axis_x:
+        labels:
+          format: number
+
+  station_market_table:
+    type: table
+    query: station_market
+    title: Benchmark station chi tiết
+    notes: Bảng chính xác về sample, rent, rent/m² và travel time của từng line-station.
+    style:
+      columns:
+        station_line:
+          label: Line
+        station_name:
+          label: Station
+        station_label:
+          visible: false
+        listing_count:
+          label: Listings
+          format: integer
+        median_rent_jpy:
+          label: Median rent JPY
+          format: integer
+        median_rent_per_m2_jpy:
+          label: Median rent/m²
+          format: integer
+        median_travel_minutes:
+          label: Median minutes
+          format: number
+
+rows:
+  - notes: KPI station sau khi dedup listing-ga.
+    cols: [accessible_listings_kpi, station_count_kpi, median_travel_kpi, station_median_rent_kpi]
+  - notes: Độ sâu nguồn cung và mặt bằng giá theo station.
+    cols: [station_inventory_chart, station_rent_chart]
+  - travel_price_scatter
+  - station_market_table

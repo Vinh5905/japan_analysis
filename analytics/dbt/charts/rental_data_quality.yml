@@ -1,0 +1,243 @@
+title: Chất lượng dữ liệu rental analytics
+notes: >
+  Board giám sát coverage và lỗi parse trên population latest-known, đồng thời
+  theo dõi reject ở biên mart. Các cờ chất lượng không được dùng để âm thầm xóa
+  listing khỏi mart.
+tags: [rental, data-quality, operations, monitoring]
+cache: 5m
+
+text: |
+  Board này phục vụ vận hành pipeline và đánh giá độ tin cậy của các dashboard
+  giá. `notebook_seed` là population bootstrap local; `operational` là record đi
+  qua loader batch hiện tại.
+
+queries:
+  quality_headline:
+    notes: Một dòng KPI tổng population, core completeness, station coverage và reject count.
+    sql: |
+      with latest as (
+        select
+          flag_missing_core,
+          station_access_parse_status
+        from {{ ref('rental_listing_latest') }}
+      ), rejects as (
+        select count(*)::bigint as reject_count
+        from {{ ref('rental_price_mart_rejects') }}
+      )
+      select
+        count(*)::bigint as latest_listing_count,
+        count(*) filter (where not flag_missing_core)::numeric
+          / nullif(count(*), 0) as core_complete_ratio,
+        count(*) filter (where station_access_parse_status = 'full')::numeric
+          / nullif(count(*), 0) as station_full_parse_ratio,
+        max(rejects.reject_count)::bigint as reject_count
+      from latest
+      cross join rejects
+
+  field_coverage:
+    notes: Coverage của các trường quan trọng, mỗi dòng là một metric tỷ lệ.
+    sql: |
+      with aggregates as (
+        select
+          count(*)::numeric as total,
+          count(rent_jpy)::numeric as rent_known,
+          count(exclusive_area_m2)::numeric as area_known,
+          count(rent_per_m2_jpy)::numeric as rent_m2_known,
+          count(locality)::numeric as locality_known,
+          count(layout_normalized)::numeric as layout_known,
+          count(building_age_years)::numeric as age_known,
+          count(direction)::numeric as direction_known,
+          count(structure)::numeric as structure_known
+        from {{ ref('rental_listing_latest') }}
+      )
+      select metric, coverage_ratio, metric_sort
+      from aggregates
+      cross join lateral (values
+        ('Rent', rent_known / nullif(total, 0), 1),
+        ('Exclusive area', area_known / nullif(total, 0), 2),
+        ('Rent per m²', rent_m2_known / nullif(total, 0), 3),
+        ('Locality', locality_known / nullif(total, 0), 4),
+        ('Layout', layout_known / nullif(total, 0), 5),
+        ('Building age', age_known / nullif(total, 0), 6),
+        ('Direction', direction_known / nullif(total, 0), 7),
+        ('Structure', structure_known / nullif(total, 0), 8)
+      ) as metrics(metric, coverage_ratio, metric_sort)
+      order by metric_sort
+
+  issue_counts:
+    notes: Số listing latest-known theo từng cờ hoặc trạng thái parse cần theo dõi.
+    sql: |
+      with counts as (
+        select
+          count(*) filter (where flag_missing_core)::bigint as missing_core,
+          count(*) filter (where flag_floor_exceeds_building)::bigint as floor_exceeds,
+          count(*) filter (where flag_layout_detail_parse_failure)::bigint as layout_failure,
+          count(*) filter (where station_access_parse_status <> 'full')::bigint
+            as station_not_full
+        from {{ ref('rental_listing_latest') }}
+      )
+      select issue, issue_count, issue_sort
+      from counts
+      cross join lateral (values
+        ('Missing core field', missing_core, 1),
+        ('Floor exceeds building', floor_exceeds, 2),
+        ('Layout detail parse failure', layout_failure, 3),
+        ('Station access not fully parsed', station_not_full, 4)
+      ) as issues(issue, issue_count, issue_sort)
+      order by issue_sort
+
+  record_origin_mix:
+    notes: Hai nguồn record latest-known để theo dõi mức phụ thuộc vào seed bootstrap.
+    sql: |
+      select
+        record_origin,
+        count(*)::bigint as listing_count
+      from {{ ref('rental_listing_latest') }}
+      group by record_origin
+      order by listing_count desc
+
+  issue_detail:
+    notes: Tối đa 50 listing có ít nhất một vấn đề parse hoặc core quality.
+    sql: |
+      select
+        task_id,
+        'nc_' || suumo_property_code as suumo_property_code,
+        record_origin,
+        locality,
+        layout_normalized,
+        rent_jpy,
+        exclusive_area_m2,
+        concat_ws(', ',
+          case when flag_missing_core then 'Missing core' end,
+          case when flag_floor_exceeds_building then 'Floor exceeds building' end,
+          case when flag_layout_detail_parse_failure then 'Layout parse' end,
+          case when station_access_parse_status <> 'full' then 'Station parse' end
+        ) as quality_issues,
+        layout_detail_parse_status,
+        station_access_parse_status
+      from {{ ref('rental_listing_latest') }}
+      where flag_missing_core
+         or flag_floor_exceeds_building
+         or flag_layout_detail_parse_failure
+         or station_access_parse_status <> 'full'
+      order by flag_missing_core desc,
+               flag_floor_exceeds_building desc,
+               flag_layout_detail_parse_failure desc,
+               task_id
+      limit 50
+
+charts:
+  latest_listing_kpi:
+    type: kpi
+    query: quality_headline
+    label: Listing latest-known
+    value: latest_listing_count
+    notes: Population kiểm soát chất lượng hiện tại.
+    style:
+      value:
+        format: integer
+
+  core_complete_kpi:
+    type: kpi
+    query: quality_headline
+    label: Core fields đầy đủ
+    value: core_complete_ratio
+    notes: Tỷ lệ không bật flag_missing_core.
+    style:
+      value:
+        format: percent
+
+  station_parse_kpi:
+    type: kpi
+    query: quality_headline
+    label: Station parse đầy đủ
+    value: station_full_parse_ratio
+    notes: Tỷ lệ listing có station_access_parse_status full.
+    style:
+      value:
+        format: percent
+
+  rejects_kpi:
+    type: kpi
+    query: quality_headline
+    label: Mart rejects
+    value: reject_count
+    notes: Record thiếu identity/thời điểm hoặc invalid ở biên mart.
+    style:
+      value:
+        format: integer
+
+  field_coverage_chart:
+    type: bar
+    query: field_coverage
+    title: Coverage của trường phân tích quan trọng
+    x: metric
+    y: coverage_ratio
+    sort:
+      by: metric_sort
+      order: asc
+    notes: Xác định dimension nào làm giảm population của phân tích sâu.
+    style:
+      number_format: percent
+
+  issue_count_chart:
+    type: bar
+    query: issue_counts
+    title: Số listing theo quality issue
+    x: issue
+    y: issue_count
+    sort:
+      by: issue_sort
+      order: asc
+    notes: Khối lượng cần điều tra theo loại lỗi parse hoặc invariant.
+    style:
+      number_format: integer
+
+  record_origin_chart:
+    type: bar
+    query: record_origin_mix
+    title: Số listing theo nguồn record
+    x: record_origin
+    y: listing_count
+    notes: Bar vẫn đọc được khi warehouse hiện chỉ có một nguồn record.
+    style:
+      number_format: integer
+
+  issue_detail_table:
+    type: table
+    query: issue_detail
+    title: Listing cần kiểm tra parse
+    notes: Chi tiết task để truy vết raw hoặc sửa rule parser/dbt.
+    style:
+      columns:
+        task_id:
+          label: Task ID
+          format: integer
+        suumo_property_code:
+          label: SUUMO code
+        record_origin:
+          label: Origin
+        locality:
+          label: Locality
+        layout_normalized:
+          label: Layout
+        rent_jpy:
+          label: Rent JPY
+          format: integer
+        exclusive_area_m2:
+          label: Area m²
+          format: number_full
+        quality_issues:
+          label: Issues
+        layout_detail_parse_status:
+          label: Layout parse
+        station_access_parse_status:
+          label: Station parse
+
+rows:
+  - notes: Chất lượng headline của population BI.
+    cols: [latest_listing_kpi, core_complete_kpi, station_parse_kpi, rejects_kpi]
+  - notes: Coverage và issue volume cần theo dõi cùng nhau.
+    cols: [field_coverage_chart, issue_count_chart]
+  - record_origin_chart
+  - issue_detail_table
