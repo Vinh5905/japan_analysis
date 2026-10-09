@@ -256,18 +256,22 @@ def select_vpn(host, state, service='openvpn-client@japan', interface='tun0', no
     from scripts.telegram_state import install_context
     from scripts.deploy_release import atomic_write
     from crawler.telegram_notifier import build_event_message
+    from scripts.docker_vpn import DockerVpn, docker_backend
     runner = runner or run_command
     run = state.get('pipeline', {})
     candidates = host.query("SELECT coalesce(json_agg(v ORDER BY last_attempt_at NULLS FIRST,filename),'[]'::json) FROM crawl_vpns v WHERE enabled")
     if not candidates:
         raise RuntimeError('No registered VPN profiles; run make vpn-sync')
+    docker = DockerVpn(host) if docker_backend(host.values) else None
+    if docker is not None and not host.vpn_stopped():
+        raise RuntimeError('Host or container VPN is still running; preflight blocked')
     peers_path = host.env_file.parent / 'state/vpn-ssh-bypass.json'
     peers = json.loads(peers_path.read_text()) if peers_path.exists() else []
     # Preserve old route bypasses as well as peers persisted by authenticated uploads.
     if config_target.exists():
         for peer in re.findall(r'(?m)^\s*route\s+([0-9.]+)\s+255\.255\.255\.255\s+net_gateway\s*$', config_target.read_text()):
             peers.append(str(ipaddress.IPv4Address(peer)))
-    sockets = runner(('ss', '-Htn', 'state', 'established', '( sport = :22 )'))
+    sockets = runner(('ss', '-Htn', 'state', 'established', '( sport = :22 )')) if docker is None else subprocess.CompletedProcess([], 0, '', '')
     if sockets.returncode == 0:
         for line in sockets.stdout.splitlines():
             try:
@@ -275,7 +279,7 @@ def select_vpn(host, state, service='openvpn-client@japan', interface='tun0', no
             except (ValueError, IndexError):
                 pass
     for vpn in candidates:
-        if not stop_vpn(service, interface, runner=runner, sleeper=sleeper):
+        if not (docker.stop(sleeper) if docker else stop_vpn(service, interface, runner=runner, sleeper=sleeper)):
             raise RuntimeError('VPN shutdown unconfirmed; fallback blocked')
         attempt = start_attempt(host, run, vpn)
         if not attempt:
@@ -292,7 +296,10 @@ def select_vpn(host, state, service='openvpn-client@japan', interface='tun0', no
             data = path.read_bytes()
             if profile(data, vpn['filename'])['sha256'] != vpn['sha256']:
                 raise ValueError('VPN checksum mismatch')
-            atomic_write(config_target, runtime_config(data, peers), 0o600)
+            if docker:
+                docker.prepare(data, vpn['filename'])
+            else:
+                atomic_write(config_target, runtime_config(data, peers), 0o600)
             deadline = monotonic() + timeout
             def bounded(command):
                 """Bound every activation subprocess by the trial's remaining time."""
@@ -303,16 +310,21 @@ def select_vpn(host, state, service='openvpn-client@japan', interface='tun0', no
                     return subprocess.run(list(command), capture_output=True, text=True,
                                           timeout=min(5, remaining), check=False)
                 return runner(command)
-            if restart_vpn(service, bounded):
+            if docker:
+                docker.start(timeout=max(0.1, deadline-monotonic()))
+                started = True
+            else:
+                started = restart_vpn(service, bounded)
+            if started:
                 consecutive = 0
                 while monotonic() < deadline:
-                    ok, _ = vpn_health_reason(service, interface, bounded)
+                    ok, _ = docker.health(timeout=max(0.1, min(5, deadline-monotonic()))) if docker else vpn_health_reason(service, interface, bounded)
                     consecutive = consecutive+1 if ok else 0
                     if consecutive >= 3 and monotonic() < deadline:
                         healthy = True
                         break
                     sleeper(min(2, max(0, deadline-monotonic())))
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
             # Report only exception type; raw config and command output contain keys.
             print('VPN trial error: ' + type(exc).__name__, flush=True)
         if not finish_attempt(host, attempt, healthy):
@@ -324,7 +336,7 @@ def select_vpn(host, state, service='openvpn-client@japan', interface='tun0', no
             install_context(state.get('pipeline'))
             return True
     # Last failed config must also be stopped before returning.
-    if not stop_vpn(service, interface, runner=runner, sleeper=sleeper):
+    if not (docker.stop(sleeper) if docker else stop_vpn(service, interface, runner=runner, sleeper=sleeper)):
         raise RuntimeError('Last VPN shutdown unconfirmed')
     return False
 

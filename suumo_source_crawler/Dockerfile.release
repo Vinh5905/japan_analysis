@@ -14,7 +14,7 @@ RUN --mount=type=cache,id=suumo-release-apt-cache,target=/var/cache/apt,sharing=
     --mount=type=cache,id=suumo-release-apt-lib,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
     && apt-get update \
-    && apt-get install -y --no-install-recommends curl libpq5 netcat-openbsd postgresql-client \
+    && apt-get install -y --no-install-recommends curl libpq5 netcat-openbsd postgresql-client openvpn iproute2 iptables \
     && rm -rf /var/lib/apt/lists/*
 
 COPY suumo_source_crawler/requirements.txt /tmp/requirements.txt
@@ -26,6 +26,7 @@ RUN --mount=type=cache,id=suumo-release-pip,target=/root/.cache/pip \
 # not mount source code, so every command must be available from these COPYs.
 COPY suumo_source_crawler/crawler /app/crawler
 COPY suumo_source_crawler/main /app/main
+COPY suumo_source_crawler/vpn /app/vpn
 COPY docker/postgres/init /app/docker/postgres/init
 COPY docker/postgres/migrations /app/docker/postgres/migrations
 COPY suumo_source_crawler/docker/python/healthcheck.py /usr/local/bin/python-healthcheck

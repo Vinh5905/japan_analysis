@@ -61,10 +61,46 @@ x-crawler-service: &crawler-service
     <<: *crawler-env
   volumes:
     - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
-  networks:
-    - release_net
+
+x-vpn-crawler: &vpn-crawler
+  <<: *crawler-service
+  network_mode: service:vpn
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  volumes:
+    - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
+    - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
+    - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
 
 services:
+  vpn:
+    image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
+    entrypoint: [python, /app/vpn/container_vpn.py]
+    command: []
+    profiles: [vpn, tasks]
+    restart: "no"
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    security_opt: [no-new-privileges:true]
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    mem_limit: ${VPN_MEM_LIMIT:-128m}
+    cpus: "${VPN_CPUS:-0.20}"
+    pids_limit: 64
+    stop_grace_period: 15s
+    volumes:
+      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}:/vpn:ro
+      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
+      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
+    networks: [release_net]
+    healthcheck:
+      test: [CMD, python, /app/vpn/container_vpn.py, --health]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16.3-bookworm}
     restart: unless-stopped
@@ -119,6 +155,7 @@ services:
   crawler-init:
     <<: *crawler-service
     command: crawler-init
+    networks: [release_net]
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,34 +164,40 @@ services:
     restart: "no"
 
   suumo-links:
-    <<: *crawler-service
+    <<: *vpn-crawler
     command: crawl-links
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      vpn:
+        condition: service_healthy
     profiles: ["tasks"]
     restart: "no"
 
   suumo-html:
-    <<: *crawler-service
+    <<: *vpn-crawler
     command: crawl-html
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      vpn:
+        condition: service_healthy
     profiles: ["tasks"]
     restart: "no"
 
   suumo-page:
-    <<: *crawler-service
+    <<: *vpn-crawler
     command: crawl-page
     depends_on:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      vpn:
         condition: service_healthy
     profiles: ["tasks"]
     restart: "no"
@@ -162,6 +205,7 @@ services:
   suumo-tools:
     <<: *crawler-service
     command: crawler-shell
+    networks: [release_net]
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,9 +214,19 @@ services:
     profiles: ["tools"]
     restart: "no"
 
+  suumo-rerun-html:
+    <<: *vpn-crawler
+    command: manual-rerun-failed-html
+    depends_on:
+      vpn:
+        condition: service_healthy
+    profiles: [tasks]
+    restart: "no"
+
   telegram-test:
     <<: *crawler-service
     command: telegram-test
+    networks: [release_net]
     profiles: ["tools"]
     restart: "no"
 

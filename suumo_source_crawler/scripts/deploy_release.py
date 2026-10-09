@@ -47,6 +47,7 @@ HOST_FILES = (
     "suumo_source_crawler/scripts/area_names.json",
     "suumo_source_crawler/scripts/refresh_areas.py",
     "suumo_source_crawler/scripts/vpn_pool.py",
+    "suumo_source_crawler/scripts/docker_vpn.py",
     "docker/postgres/migrations/008_crawl_areas_and_pipeline.sql",
     "docker/postgres/migrations/009_crawl_vpn_pool.sql",
     UNIT_PREFIX + DISPATCH_SERVICE,
@@ -157,7 +158,7 @@ def assert_no_crawler_containers(compose: list[str]) -> None:
     project_name = json.loads(result.stdout)["name"]
     containers = run(["docker", "ps", "--filter", f"label=com.docker.compose.project={project_name}",
                       "--format", '{{.Label "com.docker.compose.service"}}'], capture_output=True)
-    crawler_services = {"crawler-init", "suumo-links", "suumo-html", "suumo-page", "suumo-tools", "telegram-test"}
+    crawler_services = {"crawler-init", "suumo-links", "suumo-html", "suumo-page", "suumo-tools", "suumo-rerun-html", "vpn", "telegram-test"}
     active = crawler_services.intersection(containers.stdout.splitlines())
     if active:
         raise RuntimeError(f"Crawler containers are still running: {', '.join(sorted(active))}")
@@ -187,7 +188,7 @@ def missing_infra_images(compose: list[str]) -> list[str]:
 
 def apply_bundle(bundle: Path, target: Path, update_timer: bool = False,
                  systemd_directory: Path = Path("/etc/systemd/system"), enable_telegram_bot: bool = False, enable_ward_dispatch: bool = False, catalog_html: Path | None = None,
-                 enable_vpn_pool: bool = False, vpn_archive: Path | None = None) -> None:
+                 enable_vpn_pool: bool = False, vpn_archive: Path | None = None, container_vpn: bool = False) -> None:
     """Validate and pull first, then install with file rollback on command failure."""
     if not (target / ".env").is_file():
         raise ValueError(f"Create the VPS-specific {target / '.env'} before deploying")
@@ -198,7 +199,16 @@ def apply_bundle(bundle: Path, target: Path, update_timer: bool = False,
         with release_lock(target), tempfile.TemporaryDirectory(prefix="suumo-install-") as temporary:
             stage = Path(temporary)
             tag = unpack_bundle(bundle, stage)
+            # New workers require the VPN namespace. Never install this Compose
+            # over a legacy backend without its explicit migration/backup path.
+            if not container_vpn and read_release_env(target / '.env').get('SUUMO_VPN_BACKEND') != 'docker':
+                raise ValueError('This release requires --container-vpn to migrate the host VPN backend')
             env_data = update_tag((target / ".env").read_text(), tag).encode()
+            if container_vpn:
+                text, count = re.subn(r'(?m)^[ \t]*(?:export[ \t]+)?SUUMO_VPN_BACKEND[ \t]*=.*$', 'SUUMO_VPN_BACKEND=docker', env_data.decode())
+                if not count:
+                    text = text.rstrip('\n') + '\nSUUMO_VPN_BACKEND=docker\n'
+                env_data = text.encode()
             if enable_telegram_bot:
                 text = env_data.decode()
                 pattern = r"(?m)^[ \t]*(?:export[ \t]+)?TELEGRAM_CONTROL_ENABLED[ \t]*=.*$"
@@ -223,11 +233,11 @@ def apply_bundle(bundle: Path, target: Path, update_timer: bool = False,
             run([*staged_compose, "pull", "crawler-init", *missing_infra_images(staged_compose)])
             assert_idle()
             assert_no_crawler_containers(staged_compose)
-            if enable_ward_dispatch or enable_vpn_pool:
+            if enable_ward_dispatch or enable_vpn_pool or container_vpn:
                 for unit in (DISPATCH_SERVICE, REFRESH_SERVICE):
                     if unit_state(unit) in {"active", "activating"}:
                         run(["systemctl", "stop", unit])
-            install_files(stage, target, tag, env_data, update_timer or enable_ward_dispatch, systemd_directory, enable_ward_dispatch, catalog_html, enable_vpn_pool, vpn_archive)
+            install_files(stage, target, tag, env_data, update_timer or enable_ward_dispatch, systemd_directory, enable_ward_dispatch, catalog_html, enable_vpn_pool, vpn_archive, container_vpn)
             installed = True
     finally:
         # Resume only after releasing the lock, so a due timer can start normally.
@@ -245,7 +255,7 @@ def apply_bundle(bundle: Path, target: Path, update_timer: bool = False,
 
 def install_files(stage: Path, target: Path, tag: str, env_data: bytes,
                   update_timer: bool, systemd_directory: Path, enable_ward_dispatch: bool = False, catalog_html: Path | None = None,
-                  enable_vpn_pool: bool = False, vpn_archive: Path | None = None) -> None:
+                  enable_vpn_pool: bool = False, vpn_archive: Path | None = None, container_vpn: bool = False) -> None:
     """Back up managed files and restore their old versions if infra update fails."""
     files = {target / name: (stage / name).read_bytes() for name in HOST_FILES}
     files[target / ".env"] = env_data
@@ -271,7 +281,13 @@ def install_files(stage: Path, target: Path, tag: str, env_data: bytes,
             raise ValueError("Catalogue HTML too large")
         atomic_write(backup / "osaka-city.html", data, 0o600)
         atomic_write(backup / "osaka-city.sha256", hashlib.sha256(data).hexdigest().encode(), 0o600)
-    if enable_ward_dispatch or enable_vpn_pool:
+    host_vpn_state = None
+    if container_vpn:
+        assert_host_vpn_stopped()
+        result = subprocess.run(['systemctl', 'is-enabled', 'openvpn-client@japan.service'], capture_output=True, text=True)
+        host_vpn_state = result.stdout.strip()
+        atomic_write(backup / 'host-vpn-unit.json', json.dumps({'enabled': host_vpn_state}).encode(), 0o600)
+    if enable_ward_dispatch or enable_vpn_pool or container_vpn:
         # Private logical DB + consistent SQLite backups before applying new SQL.
         compose_old = ["docker", "compose", "--env-file", str(target / ".env"), "-f", str(target / "docker-compose.release.yml")]
         values = read_release_env(target / ".env")
@@ -298,7 +314,17 @@ def install_files(stage: Path, target: Path, tag: str, env_data: bytes,
             initialize_ward_dispatch(target, compose, catalog_html)
         if enable_vpn_pool:
             initialize_vpn_pool(target, compose, vpn_archive)
+        if container_vpn:
+            # Disable the old auto-start instance only after files/infra succeed.
+            # Never start a VPN or change the host network during installation.
+            run(['systemctl', 'disable', 'openvpn-client@japan.service'])
+            run(['systemctl', 'mask', 'openvpn-client@japan.service'])
+            verify_container_vpn(target)
     except Exception:
+        if container_vpn and host_vpn_state != 'masked':
+            subprocess.run(['systemctl', 'unmask', 'openvpn-client@japan.service'], check=False)
+            if host_vpn_state == 'enabled':
+                subprocess.run(['systemctl', 'enable', 'openvpn-client@japan.service'], check=False)
         for path, previous in old_files.items():
             if previous is None:
                 path.unlink(missing_ok=True)
@@ -315,8 +341,40 @@ def install_files(stage: Path, target: Path, tag: str, env_data: bytes,
         raise
     print(f"Installed image tag {tag}. Backup: {backup}")
     print("Ward catalogue initialized; automatic starts tomorrow at 00:00 Vietnam time." if enable_ward_dispatch
+          else "Isolated Docker VPN selected; host OpenVPN masked. Queue and schedule preserved." if container_vpn
           else "VPN pool initialized; schedule and cooldown preserved." if enable_vpn_pool
           else "No migrations or crawler command were run. Existing timer state will be preserved.")
+
+
+def assert_host_vpn_stopped():
+    """Refuse migration if any legacy tunnel/process/route is still active."""
+    result = run(['systemctl', 'show', 'openvpn-client@japan.service', '--property=ActiveState,MainPID'], capture_output=True)
+    properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    if properties.get('ActiveState') not in {'inactive', 'failed'} or properties.get('MainPID') != '0':
+        raise RuntimeError('Stop the host VPN before changing backend')
+    links = json.loads(run(['ip', '-j', 'link', 'show'], capture_output=True).stdout)
+    if any(r.get('ifname') == 'tun0' and 'UP' in r.get('flags', []) for r in links):
+        raise RuntimeError('Host tunnel is still up')
+    for family in ('-4', '-6'):
+        routes = json.loads(run(['ip', '-j', family, 'route', 'show', 'table', 'all'], capture_output=True).stdout)
+        if any(r.get('dev') == 'tun0' for r in routes):
+            raise RuntimeError('Host tunnel routes remain')
+
+
+def verify_container_vpn(target):
+    """Validate Docker wiring and internal addresses without starting any VPN or crawl."""
+    sys.path.insert(0, str(target / 'suumo_source_crawler'))
+    sys.path.insert(0, str(target / 'suumo_source_crawler/crawler'))
+    import scripts
+    scripts.__path__.insert(0, str(target / 'suumo_source_crawler/scripts'))
+    from scripts.telegram_control import Host
+    from scripts.docker_vpn import DockerVpn
+    controller = DockerVpn(Host(target / '.env', target / 'docker-compose.release.yml', read_release_env(target / '.env')))
+    if not controller.stopped():
+        raise RuntimeError('Container VPN is already running')
+    for service in ('postgres', 'minio'):
+        controller.internal_ip(service)
+    assert_host_vpn_stopped()
 
 
 def initialize_vpn_pool(target, compose, archive):
@@ -393,7 +451,7 @@ def initialize_ward_dispatch(target, compose, catalog_html=None):
 
 
 def deploy(tag: str, host: str, target: Path, apply: bool, update_timer: bool, enable_telegram_bot: bool = False, enable_ward_dispatch: bool = False, catalog_html: Path | None = None,
-           enable_vpn_pool: bool = False, vpn_source: Path = PROJECT_ROOT / 'vpn_config') -> None:
+           enable_vpn_pool: bool = False, vpn_source: Path = PROJECT_ROOT / 'vpn_config', container_vpn: bool = False) -> None:
     """Show a local-only plan by default; SSH/scp run only with --apply."""
     validate_tag(tag)
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@-]*", host):
@@ -407,6 +465,8 @@ def deploy(tag: str, host: str, target: Path, apply: bool, update_timer: bool, e
     print("Preserve: .env values except image tag (and explicit bot enable), tmp, state/ SQLite, VPN config, Docker volumes.")
     print("Telegram bot:", "enable explicitly" if enable_telegram_bot else "preserve current state; disabled by default")
     print("Timer schedule:", "replace with versioned template" if update_timer or enable_ward_dispatch else "keep existing schedule")
+    if container_vpn:
+        print('VPN: switch to Docker, back up DB/state and disable/mask legacy host auto-start; no VPN/crawl during install.')
     if catalog_html:
         print("Initial catalogue HTML SHA-256:", hashlib.sha256(catalog_html.read_bytes()).hexdigest())
     if not apply:
@@ -447,6 +507,8 @@ def deploy(tag: str, host: str, target: Path, apply: bool, update_timer: bool, e
             command.append("--enable-telegram-bot")
         if enable_ward_dispatch:
             command.append("--enable-ward-dispatch")
+        if container_vpn:
+            command.append('--container-vpn')
         if enable_vpn_pool:
             command.extend(['--enable-vpn-pool', '--vpn-archive', remote_directory + '/vpn-private.tar',
                             '--vpn-sha256', hashlib.sha256(private.read_bytes()).hexdigest()])
@@ -483,6 +545,8 @@ def main() -> int:
     install.add_argument('--enable-vpn-pool', action='store_true')
     install.add_argument('--vpn-archive', type=Path)
     install.add_argument('--vpn-sha256')
+    deployment.add_argument('--container-vpn', action='store_true')
+    install.add_argument('--container-vpn', action='store_true')
     deployment.add_argument("--catalog-html", type=Path, help="Fresh SUUMO HTML downloaded locally when VPS IP is blocked")
     install.add_argument("--catalog-html", type=Path)
     install.add_argument("--catalog-sha256")
@@ -491,7 +555,7 @@ def main() -> int:
         if args.command == "package":
             print(build_bundle(args.tag, args.output))
         elif args.command == "deploy":
-            deploy(args.tag, args.host, validate_target(args.target), args.apply, args.update_timer, args.enable_telegram_bot, args.enable_ward_dispatch, args.catalog_html, args.enable_vpn_pool, args.vpn_source)
+            deploy(args.tag, args.host, validate_target(args.target), args.apply, args.update_timer, args.enable_telegram_bot, args.enable_ward_dispatch, args.catalog_html, args.enable_vpn_pool, args.vpn_source, args.container_vpn)
         else:
             if not args.apply:
                 raise ValueError("Remote installation requires --apply")
@@ -501,7 +565,7 @@ def main() -> int:
                     raise ValueError("Catalogue HTML checksum mismatch")
             if args.enable_vpn_pool and (not args.vpn_archive or not args.vpn_sha256 or hashlib.sha256(args.vpn_archive.read_bytes()).hexdigest() != args.vpn_sha256):
                 raise ValueError('Private VPN archive checksum mismatch')
-            apply_bundle(args.bundle, validate_target(args.target), args.update_timer, enable_telegram_bot=args.enable_telegram_bot, enable_ward_dispatch=args.enable_ward_dispatch, catalog_html=args.catalog_html, enable_vpn_pool=args.enable_vpn_pool, vpn_archive=args.vpn_archive)
+            apply_bundle(args.bundle, validate_target(args.target), args.update_timer, enable_telegram_bot=args.enable_telegram_bot, enable_ward_dispatch=args.enable_ward_dispatch, catalog_html=args.catalog_html, enable_vpn_pool=args.enable_vpn_pool, vpn_archive=args.vpn_archive, container_vpn=args.container_vpn)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, tarfile.TarError) as exc:
         print(f"Release failed: {exc}", file=sys.stderr)
         return 1

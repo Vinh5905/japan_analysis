@@ -1,5 +1,5 @@
 [Unit]
-Description=Run SUUMO crawler release pipeline with Telegram notifications
+Description=Run SUUMO crawler through an isolated Docker VPN with Telegram notifications
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -10,6 +10,6 @@ WorkingDirectory=/opt/suumo-crawler
 Environment=PYTHONUNBUFFERED=1
 TimeoutStartSec=infinity
 TimeoutStopSec=10min
-ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0
+ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --compose-file /opt/suumo-crawler/docker-compose.release.yml
 ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env --vpn-managed-by-systemd
-ExecStopPost=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/stop_openvpn.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0
+ExecStopPost=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/stop_openvpn.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env

@@ -29,7 +29,7 @@ class ReleaseDeployTests(unittest.TestCase):
         self.target.mkdir()
         self.units = self.root / "systemd"
         self.units.mkdir()
-        self.env = '# config\nPOSTGRES_PASSWORD="keep-this-secret"\nSUUMO_CRAWLER_TAG=old-version\n'
+        self.env = '# config\nPOSTGRES_PASSWORD="keep-this-secret"\nSUUMO_CRAWLER_TAG=old-version\nSUUMO_VPN_BACKEND=docker\n'
         (self.target / ".env").write_text(self.env)
         (self.target / "docker-compose.release.yml").write_text("old compose")
         (self.target / "tmp").mkdir()
@@ -42,6 +42,65 @@ class ReleaseDeployTests(unittest.TestCase):
         self.infra_check = patch.object(release, "missing_infra_images", return_value=["postgres", "minio"])
         self.infra_check.start()
         self.addCleanup(self.infra_check.stop)
+
+    @patch.object(release, 'unit_state', return_value='inactive')
+    @patch.object(release, 'run')
+    def test_container_migration_masks_host_auto_start_and_preserves_queue_schedule(self, commands, units):
+        """Changing backend backs up state without activating VPN, crawling, or resetting time."""
+        (self.target / '.env').write_text(self.env.replace('SUUMO_VPN_BACKEND=docker\n', ''))
+        from scripts.telegram_state import state_for
+        state = state_for(self.target / '.env')
+        state.set('automatic_start_at', 123)
+        state.set('next_auto_at', 456)
+        state.set('start_request', {'id': 'confirmed', 'area': {'area_id': 1}})
+        commands.return_value = subprocess.CompletedProcess([], 0, '-- private dump\n', '')
+        with patch.object(release, 'assert_host_vpn_stopped'), patch.object(release, 'verify_container_vpn'), patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'enabled\n', '')), contextlib.redirect_stdout(io.StringIO()):
+            release.apply_bundle(self.bundle, self.target, systemd_directory=self.units, container_vpn=True)
+        self.assertIn('SUUMO_VPN_BACKEND=docker', (self.target / '.env').read_text())
+        self.assertIn('POSTGRES_PASSWORD="keep-this-secret"', (self.target / '.env').read_text())
+        self.assertEqual(state.get('next_auto_at'), 456)
+        self.assertEqual(state.get('start_request')['id'], 'confirmed')
+        self.assertEqual((self.units / release.TIMER).read_text(), 'existing custom schedule')
+        backup = next((self.target / '.releases').iterdir())
+        self.assertTrue((backup / 'crawler-db.sql').exists())
+        self.assertTrue((backup / 'telegram-control.sqlite3').exists())
+        self.assertEqual(json.loads((backup / 'host-vpn-unit.json').read_text())['enabled'], 'enabled')
+        calls = [c.args[0] for c in commands.call_args_list]
+        self.assertIn(['systemctl', 'mask', 'openvpn-client@japan.service'], calls)
+        self.assertFalse(any('restart' in c or (c[-1] == 'vpn' and 'up' in c) for c in calls))
+
+    @patch.object(release, 'unit_state', return_value='inactive')
+    @patch.object(release, 'run')
+    def test_container_migration_failure_restores_files_and_host_enabled_state(self, commands, units):
+        """A wiring failure rolls back the backend and masking before resuming services."""
+        self.env = self.env.replace('SUUMO_VPN_BACKEND=docker\n', '')
+        (self.target / '.env').write_text(self.env)
+        commands.return_value = subprocess.CompletedProcess([], 0, '-- dump\n', '')
+        with patch.object(release, 'assert_host_vpn_stopped'), patch.object(release, 'verify_container_vpn', side_effect=RuntimeError('bad wiring')), patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'enabled\n', '')) as processes, self.assertRaisesRegex(RuntimeError, 'bad wiring'):
+            release.apply_bundle(self.bundle, self.target, systemd_directory=self.units, container_vpn=True)
+        self.assertEqual((self.target / '.env').read_text(), self.env)
+        self.assertEqual((self.target / 'docker-compose.release.yml').read_text(), 'old compose')
+        self.assertIn(['systemctl', 'unmask', 'openvpn-client@japan.service'], [c.args[0] for c in processes.call_args_list])
+        self.assertIn(['systemctl', 'enable', 'openvpn-client@japan.service'], [c.args[0] for c in processes.call_args_list])
+
+    @patch.object(release, 'run')
+    def test_host_tunnel_blocks_container_migration(self, commands):
+        """Deployment refuses to alter a host that still has an active legacy VPN."""
+        commands.return_value = subprocess.CompletedProcess([], 0, 'ActiveState=active\nMainPID=123\n', '')
+        with self.assertRaises(RuntimeError):
+            release.assert_host_vpn_stopped()
+        self.assertEqual(commands.call_count, 1)
+
+    @patch.object(release, 'run')
+    def test_legacy_backend_requires_explicit_migration_before_any_host_action(self, commands):
+        """A forgotten migration flag cannot activate host VPN with Docker-only workers."""
+        old = self.env.replace('SUUMO_VPN_BACKEND=docker\n', '')
+        (self.target / '.env').write_text(old)
+        with self.assertRaisesRegex(ValueError, '--container-vpn'):
+            release.apply_bundle(self.bundle, self.target, systemd_directory=self.units)
+        commands.assert_not_called()
+        self.assertEqual((self.target / '.env').read_text(), old)
+        self.assertEqual((self.target / 'docker-compose.release.yml').read_text(), 'old compose')
 
     def test_archive_is_complete_and_contains_no_secrets_or_data(self):
         """Inspect a real bundle rather than assuming its allowlist was followed."""

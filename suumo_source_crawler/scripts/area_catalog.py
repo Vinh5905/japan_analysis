@@ -7,6 +7,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 CATALOG_URL = 'https://suumo.jp/chintai/osaka/city/'
+# Match the spider's existing filters when the optional release setting is blank.
+DEFAULT_SEARCH_URL = (
+    'https://suumo.jp/jj/chintai/ichiran/FR301FC001/'
+    '?ar=060&bs=040&ta=27&sc=27123&cb=0.0&ct=9999999&et=9999999'
+    '&cn=9999999&mb=0&mt=9999999&shkr1=03&shkr2=03&shkr3=03&shkr4=03&fw2='
+)
 NAMES = json.loads(Path(__file__).with_name('area_names.json').read_text())
 
 
@@ -63,7 +69,8 @@ def parse_catalog(html):
 
 
 def ward_url(base_url, sc):
-    parsed = urlsplit(base_url)
+    """Preserve configured/default search filters while selecting exactly one ward."""
+    parsed = urlsplit(base_url or DEFAULT_SEARCH_URL)
     if parsed.scheme != 'https' or parsed.hostname != 'suumo.jp' or not re.fullmatch(r'\d{5}', str(sc)):
         raise ValueError('Invalid SUUMO URL or ward code')
     query = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k not in {'sc', 'page'}]

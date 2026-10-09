@@ -2,6 +2,13 @@
 
 Crawler chạy từ Docker image; runner, VPN preflight và Telegram helper chạy trên host. `make release-deploy` gom toàn bộ host runtime thành một bundle có checksum, rồi đồng bộ qua SSH khi truyền `--apply`. Mặc định lệnh chỉ in kế hoạch tại local, không kết nối VPS.
 
+OpenVPN hiện chạy trong service Docker `vpn`; worker links/HTML/parse/rerun
+chia sẻ namespace của VPN, host giữ SSH và published ports PostgreSQL/MinIO.
+Xem [runbook Docker VPN](crawler-docker-vpn.md). Chuyển từ backend host bằng
+`opts="--apply --container-vpn"`: backup DB/SQLite/.env/units và enabled state
+VPN host, đổi backend và mask instance cũ. Installer không bật VPN/crawl,
+không chạy migration hoặc reset lịch; rollback phục hồi file và enabled state.
+
 ## Quy trình cập nhật
 
 Pool VPN dùng [runbook riêng](crawler-vpn-pool.md). Lần đầu truyền
@@ -56,13 +63,23 @@ Service systemd chạy preflight để xác nhận VPN khỏe trước khi crawl
 
 Cleanup kiểm tra các container pipeline còn chạy trong đúng Compose project; nếu lượt chạy bị ngắt, dừng chúng trước khi đóng tunnel. PostgreSQL/MinIO được giữ. Nếu không xác nhận được container đã dừng, cleanup báo lỗi và giữ VPN để crawler chưa kết thúc không chuyển sang IP public.
 
-Sau đó yêu cầu `systemctl stop --no-block openvpn-client@japan`, thử tối đa 3 lần, mỗi lần tối đa 30 kiểm tra cách nhau 2 giây. Chỉ thành công sau 3 kiểm tra liên tiếp xác nhận: service `inactive`/`failed` với `MainPID=0`, `tun0` không còn hoặc đã DOWN, và không còn route IPv4/IPv6 qua `tun0`. Không cần so sánh public IP qua dịch vụ bên ngoài. Telegram gửi thông báo đang tắt, đã xác nhận tắt hoặc cleanup thất bại. Tin riêng từng spider được gửi khi bước đó kết thúc; summary toàn pipeline chỉ gửi sau khi cleanup xác nhận VPN đã tắt.
+Backend Docker stop/remove sidecar trong đúng Compose project, xác nhận ba
+quan sát không còn container VPN chạy. Hook cũng yêu cầu instance host cũ
+inactive/failed với MainPID=0 và không còn tunnel/routes. Docker inspection lỗi
+chặn lượt tiếp theo. Backend host legacy vẫn giữ shutdown service/process/routes.
+Telegram gửi thông báo đang tắt, đã xác nhận tắt hoặc cleanup thất bại; summary
+toàn pipeline chỉ gửi sau cleanup đã xác nhận.
 
 Chạy trực tiếp `python3 suumo_source_crawler/scripts/run_release_pipeline.py ...` cũng tự preflight và cleanup trong `finally`, kể cả khi crawl lỗi. Chỉ systemd unit dùng `--vpn-managed-by-systemd` vì đã có hooks; không dùng cờ này khi chạy thủ công. Các lệnh `docker compose run ...` đơn lẻ không có vòng đời VPN tự động này: ưu tiên service/runner cho lượt chạy đầy đủ.
 
-Đây là thay đổi **host runtime và service**, không cần build lại image nếu chỉ cập nhật vòng đời VPN. Sau khi deploy, VPN chuyên dụng của crawler sẽ đóng sau mỗi lượt dù trước đó đã được bật thủ công; cần tránh dùng chung tunnel với job khác. Không tự disable OpenVPN hoặc đổi route SSH. Preflight tự bật lại OpenVPN ở lượt tiếp theo; unit không ràng buộc `Wants/After` với VPN để cleanup có thể stop VPN độc lập. Không cần bật autostart OpenVPN riêng để chạy lịch.
+Chuyển sang Docker VPN cần image mới chứa client/firewall/supervisor và host
+bundle tương ứng. Preflight tạo namespace VPN mới trước mỗi lượt; cleanup dừng
+worker rồi đóng sidecar. Container restart=no, không bật khi boot; host OpenVPN
+instance masked. Unit không ràng buộc Wants/After với service VPN host.
 
-Template version-control là `suumo_source_crawler/deploy/systemd/suumo-crawler-pipeline.timer`, mặc định mỗi ngày 00:00 giờ Việt Nam với timezone tường minh. Sửa template rồi dùng:
+Template `suumo_source_crawler/deploy/systemd/suumo-crawler-pipeline.timer`
+đánh thức dispatcher mỗi phút; quyết định chạy/nghỉ nằm trong SQLite và DB.
+Lịch hiện tại bắt đầu 2026-10-10 00:00 +07, cooldown cleanup + 1h. Sửa template rồi dùng:
 
 ```bash
 make release-deploy host=suumo-vps tag=20261009-02 opts="--apply --update-timer"

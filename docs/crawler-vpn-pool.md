@@ -4,6 +4,10 @@ Mỗi pipeline chọn một cấu hình VPN, dùng xuyên suốt links/HTML/pars
 thúc sau cleanup. Danh mục nằm trong PostgreSQL crawler; file chứa certificate/key
 nằm riêng trên host, không đưa vào Git, Docker build context, image hoặc host bundle.
 
+Từ release `20261009-vpn-docker-01`, OpenVPN nằm trong container riêng;
+`SUUMO_VPN_BACKEND=docker`. Host SSH/PostgreSQL/MinIO không đổi route và không
+cần thêm IP máy quản trị vào config. Xem [kiến trúc, firewall và cleanup](crawler-docker-vpn.md).
+
 ## Đồng bộ từ máy local
 
 ```bash
@@ -40,19 +44,19 @@ kê được giữ nguyên. Thư mục cũ không bị xóa.
 ## Chọn và thử VPN
 
 `crawl_vpns.enabled=true`, sắp `last_attempt_at ASC NULLS FIRST, filename ASC`.
-Lần thử được ghi trước systemd, gồm cả cấu hình lỗi; vì vậy VPN lỗi xuống cuối
+Lần thử được ghi trước activation, gồm cả cấu hình lỗi; vì vậy VPN lỗi xuống cuối
 thứ tự lần sau. `last_used_at` chỉ cập nhật khi đã kết nối ổn định.
 
 Mỗi cấu hình thử một lần, tối đa 60 giây cho activation; cần ba health check liên
-tiếp cách nhau hai giây: service active, tun0 UP, hai route def1 qua tun0. Trước mỗi
-lần đổi file phải xác nhận service/process/tunnel/IPv4+IPv6 routes đã tắt bằng
-cleanup hiện có. Thời gian cleanup nằm ngoài 60 giây activation.
+tiếp cách nhau hai giây: child OpenVPN sống, tun0 UP, hai route def1 qua tun0 và
+firewall chặn đường trực tiếp còn đầy đủ. Trước mỗi lần đổi file phải xác nhận
+sidecar cũ đã stop/remove và VPN host không hoạt động. Thời gian cleanup nằm
+ngoài 60 giây activation.
 
-Runtime atomically tạo `/etc/openvpn/client/japan.conf`, chuẩn hóa `dev tun0` và
-`redirect-gateway def1`, giữ inline certificate/key và route SSH qua `net_gateway`.
-File gốc không đổi. SSH IPv4 hiện tại được lưu qua lần sync và đọc thêm từ kết nối
-SSH hiện có/cấu hình cũ. Các route này dùng gateway trước VPN theo
-[OpenVPN manual](https://openvpn.net/community-docs/community-articles/openvpn-2-6-manual.html).
+Runtime tạo snapshot private trong `state/vpn-runtime`, mount read-only cho
+sidecar và dùng nguyên namespace đó xuyên suốt run. File gốc không đổi.
+Backend host cũ vẫn hỗ trợ runtime `/etc/openvpn/client/japan.conf` và SSH bypass
+qua `net_gateway`, nhưng service host đã được mask trên VPS hiện tại.
 
 Thử hết pool tạo một lượt `preflight_failed`, zero HTML URLs, tiêu một lượt/ngày.
 Không xác nhận được shutdown thì chặn fallback và lượt sau. DB lỗi thì không bắt

@@ -28,7 +28,7 @@ from scripts.telegram_state import state_for, install_context  # noqa: E402
 
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess]
-PIPELINE_SERVICES = {"crawler-init", "suumo-links", "suumo-html", "suumo-page"}
+PIPELINE_SERVICES = {"crawler-init", "suumo-links", "suumo-html", "suumo-page", "suumo-rerun-html"}
 
 
 def run_command(command: Sequence[str]) -> subprocess.CompletedProcess:
@@ -180,8 +180,17 @@ def main() -> int:
         lock = nullcontext() if args.lock_held else release_lock(args.compose_file.resolve().parent)
         with lock:
             finish_crawler_containers(args.compose_file.resolve(), args.env_file.resolve())
-            stopped = stop_vpn(args.service, args.interface, args.stop_attempts, args.checks_per_attempt,
-                               args.required_consecutive_checks, args.check_interval_seconds, notifier=notifier)
+            from scripts.docker_vpn import DockerVpn, docker_backend
+            if docker_backend(values):
+                from scripts.telegram_control import Host
+                controller = DockerVpn(Host(args.env_file.resolve(), args.compose_file.resolve(), read_env_file(args.env_file)))
+                notifier.send_message(build_event_message('ĐANG TẮT VPN', {'Service': 'Docker VPN'}))
+                stopped = controller.stop() and vpn_stopped_reason(args.service, args.interface)[0]
+                if stopped:
+                    notifier.send_message(build_event_message('VPN ĐÃ TẮT — ĐÃ XÁC NHẬN', {'Service': 'Docker VPN', 'Trạng thái': 'crawler và container VPN đã dừng'}))
+            else:
+                stopped = stop_vpn(args.service, args.interface, args.stop_attempts, args.checks_per_attempt,
+                                   args.required_consecutive_checks, args.check_interval_seconds, notifier=notifier)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"VPN cleanup failed: {exc}", file=sys.stderr, flush=True)
         notifier.send_message(build_event_message("VPN CLEANUP THẤT BẠI", {"Lý do": str(exc), "Kết quả": "chưa xác nhận VPN đã tắt"}))

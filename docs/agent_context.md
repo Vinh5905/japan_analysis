@@ -7,6 +7,45 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 
 ## Trạng thái VPS mới nhất — 2026-10-09
 
+**21:25 +07 — lượt Telegram đầu tiên đang chạy.** Người dùng xác nhận Miyakojima
+lúc 21:16, nhưng dispatcher ValueError trước tạo run do SUUMO_SEARCH_URL trống:
+ward_url thiếu fallback mặc định dù spider/settings hỗ trợ cấu hình này. Đã sửa
+host area_catalog để dùng đúng URL/filter mặc định của spider, thay một sc và
+thêm regression blank/missing URL + manual trước ngày lịch; **168 tests đạt**.
+Hotfix host bundle dùng image/digest Docker VPN 01 không đổi; backup private
+`.releases/20261009-vpn-docker-01-f77c9037` gồm DB/SQLite giữ yêu cầu gốc.
+Checksum area_catalog `3ad0a16689ed748695f05251745548e124a3ab67724c211b94fb75274d2c7f9e`
+khớp local/VPS. Dispatcher đã tiếp nhận đúng key `283e1a3a3c12482882ffe030c2661474`,
+run **40**, created_by manual, Miyakojima/sc27102; queue tiêu thụ lúc DB tạo run,
+không tạo yêu cầu mới. Preflight fallback qua profile không khỏe, chọn
+`vpngate_153.172.5.86_tcp_1232.ovpn`, VPN healthy. Runner/bootstrap thành công;
+links spider bắt đầu 21:24:25, SUUMO HTTP200, phát hiện **41 trang**, ba trang
+đầu 168+185+145=498 link mới. Pipeline đang chạy ở snapshot này, chưa xác nhận
+HTML/parse/cleanup hoàn tất; không deploy/tắt VPN khi đang chạy. Các tổng/stat=0
+dưới đây mô tả trước lượt production này. Lịch 00:00 10/10 giữ nguyên.
+
+Đã deploy **`20261009-vpn-docker-01`**: OpenVPN client trong service Docker `vpn`,
+links/HTML/parse/rerun chia sẻ private namespace; firewall OUTPUT DROP chặn
+Internet khi tunnel/sidecar mất. DNS public đi qua tunnel, postgres/minio được
+freeze IP/hosts riêng. Preflight/pool, runner --no-deps, cleanup worker trước VPN,
+dispatcher và status đã chuyển backend; host `openvpn-client@japan.service`
+disabled/masked, không sửa host routes/japan.conf. **166 tests đạt**, lab TLS
+local đạt cả tunnel down và sidecar removal. QA VPN thật trên VPS: hai profile
+đầu chưa khỏe, profile thứ ba `vpngate_115.36.204.213_tcp_1464.ovpn` khỏe;
+worker IP 115.36.204.213, host IP 103.249.116.192. SSH mới và tunnel PostgreSQL,
+MinIO API/console đạt khi VPN bật; worker đọc DB/object, remove sidecar chặn
+egress và host routes giữ nguyên. Không crawl SUUMO hoặc ghi production.
+Sau deploy: 25 host/7 image checksums, digest, menu 9 lệnh/systemd unit hợp lệ;
+bot/timer active, crawler/host VPN/Docker VPN rảnh, dispatcher success. 39 run/
+65.551 URL, 24 ward, 23 VPN stats 0, queue/cooldown/lịch **2026-10-10 00:00 +07**
+giữ nguyên. Backup `.releases/20261009-vpn-docker-01-053b0519` gồm pg_dump,
+SQLite, files/.env và host-vpn-unit.json; installer không bật VPN/crawl/migration.
+Chốt từ chối upgrade backend host thiếu --container-vpn đã cài thêm qua host
+bundle; backup files `.releases/20261009-vpn-docker-01-cb3ca0aa`, image không đổi.
+Digest `sha256:9cc8a26a5dddff376aeafb3decf282fe5df0c89316bf1fca045e524604c2dc84`.
+Xem [Docker VPN](crawler-docker-vpn.md) và [biên bản release](crawler-release-20261009-vpn-docker-01.md).
+Các ghi chú VPN host dưới đây là lịch sử, không bật lại service host trong runtime mới.
+
 Đã deploy **`20261009-vpn-03`**: danh mục 23 VPN ở `/opt/suumo-crawler/vpn_config`,
 migration 009 gồm crawl_vpns/attempts/request journal và run VPN snapshot; chọn lần
 thử xa nhất, mỗi VPN thử một lần tối đa 60s, chỉ fallback sau shutdown xác nhận.

@@ -54,10 +54,11 @@ def parse_args() -> argparse.Namespace:
     """Parse retry and health-check settings for the OpenVPN preflight."""
 
     parser = argparse.ArgumentParser(
-        description="Ensure a host OpenVPN service is healthy before the crawler starts.",
+        description="Ensure the configured OpenVPN backend is healthy before the crawler starts.",
     )
     parser.add_argument("--service", default="openvpn-client@japan")
     parser.add_argument("--interface", default="tun0")
+    parser.add_argument("--compose-file", type=Path, default=None)
     parser.add_argument(
         "--env-file",
         type=Path,
@@ -376,8 +377,10 @@ def main() -> int:
     state = state_for(args.env_file)
     from scripts.telegram_control import Host
     from scripts.crawl_dispatcher import prepare
+    from scripts.docker_vpn import docker_backend
+    compose_file = args.compose_file or args.env_file.resolve().parent / "docker-compose.release.yml"
     try:
-        run = prepare(Host(args.env_file.resolve(), args.env_file.resolve().parent / "docker-compose.release.yml", dotenv_values), state)
+        run = prepare(Host(args.env_file.resolve(), compose_file.resolve(), dotenv_values), state)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Cannot prepare DB crawl run: {type(exc).__name__}; VPN not started", file=sys.stderr)
         return 2
@@ -386,8 +389,8 @@ def main() -> int:
         notifier,
         "VPN KIỂM TRA BẮT ĐẦU",
         {
-            "Service": args.service,
-            "Interface": args.interface,
+            "Service": "Docker vpn" if docker_backend(dotenv_values) else args.service,
+            "Interface": "tun0 trong container" if docker_backend(dotenv_values) else args.interface,
             "Mỗi cấu hình": "một lần thử, tối đa 60 giây",
             "Host": hostname,
             "Crawler": "chưa được phép chạy cho tới khi VPN khỏe",
@@ -396,7 +399,7 @@ def main() -> int:
     try:
         from scripts.vpn_pool import select_vpn
         healthy = select_vpn(
-            Host(args.env_file.resolve(), args.env_file.resolve().parent / "docker-compose.release.yml", dotenv_values),
+            Host(args.env_file.resolve(), compose_file.resolve(), dotenv_values),
             state, args.service, args.interface, notifier=notifier,
         )
     except BaseException:

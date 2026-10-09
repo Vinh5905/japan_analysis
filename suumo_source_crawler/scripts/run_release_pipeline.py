@@ -289,7 +289,7 @@ def run_with_vpn(args: argparse.Namespace) -> int:
     state.launch(area, "manual")
     scripts = PROJECT_ROOT / "scripts"
     common = ["--env-file", str(args.env_file.resolve()), "--service", args.vpn_service,
-              "--interface", args.vpn_interface]
+              "--interface", args.vpn_interface, "--compose-file", str(args.compose_file.resolve())]
     environment = dict(os.environ)
     environment["SUUMO_RUN_CREATED_BY"] = "manual"
     directory = args.compose_file.resolve().parent
@@ -306,7 +306,7 @@ def run_with_vpn(args: argparse.Namespace) -> int:
     finally:
         environment["SERVICE_RESULT"] = "success" if result_code == 0 else "exit-code"
         cleanup = run_command([sys.executable, str(scripts / "stop_openvpn.py"), *common,
-                               "--compose-file", str(args.compose_file.resolve()), "--lock-held"], directory, environment)
+                               "--lock-held"], directory, environment)
         if cleanup.return_code != 0:
             print("Pipeline ended but VPN shutdown was NOT confirmed", file=sys.stderr, flush=True)
             result_code = result_code or cleanup.return_code
@@ -365,7 +365,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     commands: list[tuple[str, list[str]]] = [
         (
             "start_postgres_minio",
-            [*compose_base, "up", "-d", "--pull", "never", "postgres", "minio"],
+            [*compose_base, "up", "-d", "--no-recreate", "--pull", "never", "postgres", "minio"],
         ),
         (
             "crawler_init",
@@ -383,6 +383,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
                     "--rm",
                     "--pull",
                     "never",
+                    "--no-deps",
                     "-e",
                     f"TELEGRAM_HOSTNAME={hostname}",
                     "-e",
@@ -395,7 +396,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
                     "-e", f"SUUMO_HTML_LINKS_FILE={host_environment['SUUMO_HTML_LINKS_FILE']}",
                     "-e", f"SUUMO_VPN_ID={host_environment['SUUMO_VPN_ID']}",
                     "-e", f"SUUMO_VPN_FILENAME={host_environment['SUUMO_VPN_FILENAME']}",
-                    *(["suumo-tools", "manual-rerun-failed-html", "--limit", str(getattr(args, 'rerun_limit', 0))]
+                    *(["suumo-rerun-html", "manual-rerun-failed-html", "--limit", str(getattr(args, 'rerun_limit', 0))]
                       if rerun and service_name == 'suumo-html' else [service_name]),
                 ],
             )

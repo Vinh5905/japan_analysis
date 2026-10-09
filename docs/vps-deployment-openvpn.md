@@ -2,11 +2,19 @@
 
 ## Pool VPN hiện tại
 
-Release `20261009-vpn-03` dùng 23 cấu hình dưới `/opt/suumo-crawler/vpn_config`
-và PostgreSQL catalogue thay cho cấu hình cố định. `japan.conf` được sinh trước
-mỗi activation khi tunnel cũ đã tắt, giữ route SSH. Thêm file bằng
+Release hiện tại **`20261009-vpn-docker-01`** dùng OpenVPN client trong Docker;
+worker dùng chung namespace với VPN, firewall chặn Internet khi tunnel mất.
+Host không đổi route: SSH mới và tunnel PostgreSQL/MinIO API/console đã kiểm
+chứng khi VPN thật đang bật. `openvpn-client@japan.service` đã masked/inactive;
+không bật lại hoặc sửa route SSH theo các phần legacy bên dưới.
+Xem [runbook Docker VPN](crawler-docker-vpn.md) và
+[biên bản kiểm chứng](crawler-release-20261009-vpn-docker-01.md).
+
+Pool giữ 23 cấu hình dưới `/opt/suumo-crawler/vpn_config`
+và PostgreSQL catalogue. Thêm file bằng
 `make -C suumo_source_crawler vpn-sync`; xem [runbook pool VPN](crawler-vpn-pool.md).
-Các phần thiết lập OpenVPN ban đầu bên dưới giữ để tham khảo hạ tầng.
+Các phần 13–19 về VPN host, route SSH và retry cũ bên dưới giữ để tham khảo lịch sử;
+vận hành VPN hiện tại theo runbook Docker ở trên. Phần SSH tunnel/infra vẫn áp dụng.
 
 Tài liệu này mô tả quy trình từ lúc tạo SSH key để vào VPS, cài Docker, clone repo, chạy crawler release, rồi cấu hình OpenVPN theo cách B: VPN chạy trên host nhưng giữ SSH đi qua public gateway.
 

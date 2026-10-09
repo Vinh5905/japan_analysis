@@ -109,7 +109,7 @@ class Host:
         config = json.loads(self.command([*self.compose, "config", "--format", "json"]))
         active = self.command(["docker", "ps", "--filter", "label=com.docker.compose.project=" + config["name"],
                                "--format", '{{.Label "com.docker.compose.service"}}'])
-        return bool(set(active.splitlines()) & {"crawler-init", "suumo-links", "suumo-html", "suumo-page", "suumo-tools"})
+        return bool(set(active.splitlines()) & {"crawler-init", "suumo-links", "suumo-html", "suumo-page", "suumo-tools", "suumo-rerun-html"})
 
     def start(self):
         self.command(["systemctl", "start", "--no-block", SERVICE])
@@ -159,7 +159,9 @@ class Host:
                 return subprocess.CompletedProcess(command,0,stdout=self.command(list(command)),stderr="")
             except (OSError, RuntimeError, subprocess.SubprocessError):
                 return subprocess.CompletedProcess(command,1,stdout="",stderr="")
-        return vpn_stopped_reason("openvpn-client@japan", "tun0", runner)[0]
+        from scripts.docker_vpn import DockerVpn, docker_backend
+        host_stopped = vpn_stopped_reason("openvpn-client@japan", "tun0", runner)[0]
+        return host_stopped and (DockerVpn(self).stopped() if docker_backend(self.values) else True)
 
     def pipeline_by_key(self, key):
         from scripts.area_catalog import literal
@@ -207,11 +209,16 @@ class Host:
                 return subprocess.CompletedProcess(command, 0, stdout=self.command(list(command)), stderr="")
             except RuntimeError:
                 return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
-        healthy, reason = vpn_health_reason("openvpn-client@japan", "tun0", runner)
+        from scripts.docker_vpn import DockerVpn, docker_backend
+        if docker_backend(self.values):
+            healthy, reason = DockerVpn(self).health()
+            vpn = {'ActiveState': 'Docker'}
+        else:
+            healthy, reason = vpn_health_reason("openvpn-client@japan", "tun0", runner)
         return {"Crawler": "đang chạy" if busy else "rảnh", "Systemd": f"{props.get('ActiveState')} / {props.get('SubState')}",
                 "Bước hiện tại" if busy else "Bước gần nhất": STEPS.get(run.get("step"), run.get("step", "chưa có")),
                 "Lượt chạy": run.get("run_id", "chưa có"), "Kết quả gần nhất": props.get("Result", "unknown"),
-                "VPN": "khỏe (tun0 + route)" if healthy else f"{vpn.get('ActiveState', 'unknown')} · {reason}",
+                "VPN": "khỏe (Docker tunnel + firewall)" if healthy and docker_backend(self.values) else "khỏe (tun0 + route)" if healthy else f"{vpn.get('ActiveState', 'unknown')} · {reason}",
                 "Cấu hình VPN": (run.get('vpn') or run.get('vpn_attempt') or {}).get('filename', 'chưa có'),
                 "Khu vực": run.get("area", {}).get("display_name", "chưa có")}
 

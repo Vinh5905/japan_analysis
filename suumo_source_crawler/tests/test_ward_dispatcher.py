@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from scripts.area_catalog import parse_catalog, ward_url, NAMES
+from scripts.area_catalog import parse_catalog, ward_url, NAMES, DEFAULT_SEARCH_URL
 from scripts.crawl_dispatcher import dispatch, decision, choose_area, prepare, persist_finish, ZONE
 from scripts.runtime_lock import release_lock
 from scripts.telegram_state import ControlState
@@ -84,6 +84,34 @@ class WardDispatcherTests(unittest.TestCase):
         self.assertEqual(parse_qs(urlsplit(url).query),{'sc':['27123'],'cb':['0'],'bs':['040']})
         for base in ('https://evil.example/?sc=1','http://suumo.jp/'):
             with self.assertRaises(ValueError): ward_url(base,'27123')
+
+    def test_empty_release_url_uses_the_spiders_existing_filters(self):
+        """Blank/missing optional config must launch, preserving the deployed spider defaults."""
+        import ast
+        from urllib.parse import parse_qs, urlsplit
+        settings = ast.parse((ROOT / 'crawler/crawler/settings.py').read_text())
+        assignment = next(n for n in settings.body if isinstance(n, ast.Assign)
+                          and any(isinstance(t, ast.Name) and t.id == 'SUUMO_SEARCH_URL' for t in n.targets))
+        self.assertEqual(DEFAULT_SEARCH_URL, ast.literal_eval(assignment.value.values[-1]))
+        for value in ('', None):
+            query = parse_qs(urlsplit(ward_url(value, '27102')).query, keep_blank_values=True)
+            self.assertEqual(query['sc'], ['27102'])
+            self.assertEqual(query['ar'], ['060'])
+            self.assertEqual(query['bs'], ['040'])
+            self.assertEqual(query['cb'], ['0.0'])
+            self.assertEqual(query['fw2'], [''])
+
+    def test_manual_queue_starts_with_blank_url_before_automatic_start(self):
+        """Reproduce the live confirmed Miyakojima queue without consuming it prematurely."""
+        self.host.values['SUUMO_SEARCH_URL'] = ''
+        self.state.set('automatic_start_at', self.now + 3600)
+        self.state.request_start(self.now, area())
+        dispatch(self.host, self.state, self.now)
+        self.assertEqual(self.host.started, 1)
+        self.assertIsNotNone(self.state.get('start_request'))
+        self.assertIn('sc=27101', self.state.get('pipeline')['area']['search_url'])
+        self.assertEqual(prepare(self.host, self.state)['source'], 'manual')
+        self.assertIsNone(self.state.get('start_request'))
 
     def test_fair_selection_then_oldest_then_code(self):
         self.assertEqual(choose_area([area(1,10),area(2,1)])['area_id'],2)
