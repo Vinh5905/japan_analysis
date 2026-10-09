@@ -31,11 +31,11 @@ class AirflowGraphTests(unittest.TestCase):
         check_cycle(self.dag)
         models = [t for t in self.dag.tasks if isinstance(t, SelectedDbtRunOperator)]
         tests = [t for t in self.dag.tasks if isinstance(t, SelectedDbtTestOperator)]
-        self.assertEqual(len(models), 26)
+        self.assertEqual(len(models), len(self.graph.models))
         counts = Counter(uid for t in tests for uid in t.dbt_node_ids)
         self.assertEqual(counts, Counter({uid: 1 for uid in set(self.graph.tests) | set(self.graph.units)}))
-        self.assertEqual(len(self.graph.tests), 88)
-        self.assertEqual(len(self.graph.units), 2)
+        self.assertGreaterEqual(len(self.graph.tests), 88)
+        self.assertGreaterEqual(len(self.graph.units), 2)
         self.assertNotIn('dbt_run', self.dag.task_ids)
         self.assertNotIn('dbt_test', self.dag.task_ids)
         tasks = {uid: t for t in models for uid in t.dbt_node_ids}
@@ -90,6 +90,39 @@ class AirflowGraphTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.graph.resolve(conf)
 
+    def test_geocode_gate_and_branch_selection(self):
+        enrichment = self.dag.get_task('enrich_geographies_cache')
+        upstream = {t.task_id for t in enrichment.get_flat_relatives(upstream=True)}
+        observations = self.graph.names['int_suumo__mart_observations']
+        run_tasks = {uid: t for t in self.dag.tasks if isinstance(t, SelectedDbtRunOperator)
+                     for uid in t.dbt_node_ids}
+        self.assertIn(run_tasks[observations].task_id, upstream)
+        dim = run_tasks[self.graph.names['dim_geography']]
+        self.assertIn(enrichment.task_id, {t.task_id for t in dim.get_flat_relatives(upstream=True)})
+        stage = run_tasks[self.graph.names['stg_suumo__address_geocodes']]
+        self.assertIn(enrichment.task_id, {t.task_id for t in stage.get_flat_relatives(upstream=True)})
+        address_side = self.graph.ancestors(observations) | {observations}
+        for t in self.dag.tasks:
+            if isinstance(t, SelectedDbtTestOperator):
+                for uid in t.dbt_node_ids:
+                    parents = set(self.graph.nodes.get(uid, {}).get('depends_on', {}).get('nodes', []))
+                    if ((parents and parents.issubset(address_side))
+                            or self.graph.nodes.get(uid, {}).get('name') == 'assert_suumo_geocode_address_query'):
+                        self.assertIn(t.task_id, upstream)
+        function = enrichment.python_callable
+        module = __import__(function.__module__, fromlist=['enrich_geographies'])
+        for selection in (None, {'execute_ids': [self.graph.names['rental_listing_latest']]}):
+            with patch.object(module, 'enrich_geographies') as enrich:
+                with self.assertRaises(AirflowSkipException):
+                    function(ti=SimpleNamespace(xcom_pull=lambda **k: selection))
+                enrich.assert_not_called()
+        for root in ('int_suumo__address', 'dim_geography', 'stg_suumo__address_geocodes'):
+            _, selected = self.graph.resolve({'mode': 'dbt_only', 'model': root})
+            with patch.object(module, 'enrich_geographies', return_value={'errors': 1}) as enrich:
+                self.assertEqual(function(ti=SimpleNamespace(xcom_pull=lambda **k: {'execute_ids': list(selected)})),
+                                 {'errors': 1})
+                enrich.assert_called_once()
+
     def test_batch_and_final_failure_paths(self):
         loader = self.dag.get_task('load_batches').python_callable
         prepare = self.dag.get_task('prepare_transform').python_callable
@@ -105,7 +138,7 @@ class AirflowGraphTests(unittest.TestCase):
             with patch.object(module, 'postgres_connection') as conn:
                 conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.return_value = ('exists',)
                 result = prepare(params={}, ti=SimpleNamespace(xcom_pull=lambda **k: summary))
-                self.assertEqual(len(set(result['execute_ids']).intersection(self.graph.models)), 26)
+                self.assertEqual(len(set(result['execute_ids']).intersection(self.graph.models)), len(self.graph.models))
         with patch.object(module, 'load_pending_batches', side_effect=AssertionError('source touched')):
             self.assertEqual(loader(params={'mode': 'dbt_only'})['results'], [])
         for summary, states in ((None, [('load_batches', 'failed')]),

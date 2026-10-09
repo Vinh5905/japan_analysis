@@ -167,3 +167,13 @@ dbt-airflow-manifest: build ## Atomically refresh the static Airflow dbt graph (
 .PHONY: dbt-airflow-check
 dbt-airflow-check: ## Verify manifest task coverage, dependencies, selection and failure handling
 	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_dbt_airflow.py' -v
+
+.PHONY: geocode-init geocode geocode-test
+geocode-init: ## Create the geocode cache source in an existing warehouse (no HTTP)
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_geocoder --init-only
+
+geocode: ## Enrich addresses from existing dbt mart observations; pass opts="--dry-run" or "--limit 5"
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_geocoder $(opts)
+
+geocode-test: ## Run fixture-based Python geocoder and notebook parity tests (no HTTP)
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_suumo_geocoder.py' -v

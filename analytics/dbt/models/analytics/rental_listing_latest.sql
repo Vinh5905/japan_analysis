@@ -82,7 +82,15 @@ select
     q.flag_floor_exceeds_building,
     q.flag_layout_detail_parse_failure,
     q.layout_detail_parse_status,
-    q.station_access_parse_status
+    q.station_access_parse_status,
+
+    g.latitude,
+    g.longitude,
+    g.coordinate_level,
+    g.geocode_status,
+    g.geocode_provider,
+    g.geocode_matched_address,
+    g.geocoded_at
 from {{ ref('rental_prices_latest_known') }} o
 join {{ ref('dim_rental_listing') }} l using (listing_version_key)
 join {{ ref('dim_geography') }} g using (geography_key)

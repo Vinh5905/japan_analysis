@@ -137,3 +137,8 @@ timestamp ties, NULL descriptor và cùng code thuộc hai nguồn khác nhau.
 - DBML đã kiểm tra tĩnh 7 bảng / 6 reference và đối chiếu tên cột với code;
   chưa chạy parser chính thức của dbdiagram.
 - Các kiểm chứng trên không phải kiểm thử tải production hoặc deploy lên VPS.
+
+
+## Tọa độ địa chỉ chōme
+
+GSI enrichment chạy bằng Python sau mart observations và trước dim geography; cache ở `raw.suumo_address_geocodes`. Tọa độ và metadata ở `dim_geography`, fact dùng `geography_key`; history/latest views xuất sẵn tọa độ. Không đổi hash/SCD2, không cập nhật Charts. Xem [runbook geocoding](suumo-geocoding.md) và notebook `03_geocode_addresses.ipynb` để chạy thử, bootstrap/backfill, retry và kiểm chứng coverage.

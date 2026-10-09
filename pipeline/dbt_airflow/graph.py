@@ -114,7 +114,9 @@ class GraphBuilder:
                       if isinstance(operator, SelectedDbtTestOperator) for uid in operator.dbt_node_ids}
         self.runs = {uid: operator for operator in dag.tasks
                      if isinstance(operator, SelectedDbtRunOperator) for uid in operator.dbt_node_ids}
-        self.entries = dict(self.runs)
+        self.entries = {uid: operator for operator in dag.tasks
+                        if isinstance(operator, (SelectedDbtRunOperator, ReusedRelationOperator))
+                        for uid in operator.dbt_node_ids}
         for tid, unit in self.graph.units.items():
             self.entries[self.graph.names[unit["model"]]] = self.tests[tid]
         # AFTER_EACH does not render the three self-contained tests with no refs.
@@ -137,3 +139,23 @@ class GraphBuilder:
         if set(self.tests) != expected:
             raise RuntimeError(f"Unrendered dbt tests: {expected - set(self.tests)}")
         return group
+
+    def gate_geocoding(self, enrichment):
+        """Insert HTTP enrichment at the address/cache boundary, without splitting Cosmos.
+
+        Use only address-side gates. A test also reading the coordinate cache
+        would create a cycle if it became a prerequisite of the cache writer.
+        """
+        observations = self.graph.names['int_suumo__mart_observations']
+        cache = next(uid for uid, node in self.graph.nodes.items()
+                     if node['resource_type'] == 'source'
+                     and node['source_name'] == 'warehouse_raw'
+                     and node['name'] == 'suumo_address_geocodes')
+        self.runs[observations] >> enrichment
+        address_side = self.graph.ancestors(observations) | {observations}
+        for tid, test in self.graph.tests.items():
+            parents = set(test['depends_on']['nodes'])
+            if ((parents and parents.issubset(address_side))
+                    or test['name'] == 'assert_suumo_geocode_address_query'):
+                self.tests[tid] >> enrichment
+        enrichment >> self.entries[cache]

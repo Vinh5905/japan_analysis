@@ -23,8 +23,22 @@ models:
           - not_null
           - unique
   - name: dim_geography
-    description: "Distinct normalized geographic profiles; missing levels remain NULL. No claim of a national location master."
+    description: "Distinct normalized geographic profiles with optional chome address-search points. Geography identity excludes coordinates; these are not building locations."
     columns:
+      - name: latitude
+        description: "Latitude in decimal degrees; nullable if no accepted chome point."
+      - name: longitude
+        description: "Longitude in decimal degrees; nullable if no accepted chome point."
+      - name: coordinate_level
+        description: "chome for accepted points; does not imply rooftop accuracy or a mathematical centroid."
+      - name: geocode_status
+        description: "matched, a provider failure status, invalid_input, or not_requested when cache is absent."
+      - name: geocode_provider
+        description: "Geocoder that supplied the cached result."
+      - name: geocode_matched_address
+        description: "Address label returned by the geocoder, retained for audit."
+      - name: geocoded_at
+        description: "UTC timestamp of the accepted provider result."
       - name: geography_key
         data_tests:
           - not_null

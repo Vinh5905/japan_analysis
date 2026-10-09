@@ -430,13 +430,13 @@ không reload file 18 MB sau mỗi batch. Warehouse mới phải seed trước l
 ## Task graph và chạy lại dbt
 
 DAG ID vẫn là `suumo_load_to_warehouse`. Nhóm `dbt.models` gồm `staging`,
-`intermediate`, `marts`, `analytics`: 26 model, mỗi model có `run` và các data
-test riêng gom vào `test` nếu có. Hai unit test chạy trước model tương ứng.
+`intermediate`, `marts`, `analytics`: 27 model, mỗi model có `run` và các data
+test riêng gom vào `test` nếu có. Ba unit test chạy trước model tương ứng.
 Cosmos dùng `AFTER_EACH` với detached multi-parent tests. Test liên model có
 một task duy nhất, chờ tất cả input và chặn consumer chung khi các input đã là
-ancestor của consumer. Ba scenario test không có `ref()` nằm trong
-`standalone_tests`; raw và seed giữ đầy đủ test. Full run thực thi đúng 88 data
-test và 2 unit test, không chạy test lại sau toàn graph.
+ancestor của consumer. Bốn scenario test không có `ref()` nằm trong
+`standalone_tests`; raw và seed giữ đầy đủ test. Full run thực thi đúng 95 data
+test và 3 unit test, không chạy test lại sau toàn graph.
 
 Trigger DAG với JSON mặc định `{"mode": "load_and_transform", "model": null}`
 để load pending batches rồi transform. Không có batch thành công thì nhánh dbt
@@ -533,3 +533,8 @@ khi dùng script. Kết quả JSON/baseline nằm trong
 `analytics/dbt/target/airflow/qa/`, log ở `pipeline/airflow/logs/dbt_airflow_qa/`
 (đều Git ignored). Run QA lỗi được giữ trong lịch sử metadata; không xóa lịch sử
 để làm sạch Grid.
+
+
+## Tọa độ địa chỉ chōme
+
+GSI enrichment chạy bằng Python sau mart observations và trước dim geography; cache ở `raw.suumo_address_geocodes`. Tọa độ và metadata ở `dim_geography`, fact dùng `geography_key`; history/latest views xuất sẵn tọa độ. Không đổi hash/SCD2, không cập nhật Charts. Xem [runbook geocoding](suumo-geocoding.md) và notebook `03_geocode_addresses.ipynb` để chạy thử, bootstrap/backfill, retry và kiểm chứng coverage.

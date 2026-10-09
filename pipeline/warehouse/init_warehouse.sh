@@ -78,3 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_suumo_parser_records_data_hash
 CREATE INDEX IF NOT EXISTS idx_suumo_parser_records_record_gin
     ON raw.suumo_parser_records USING GIN (record);
 SQL
+
+psql -h "${WAREHOUSE_POSTGRES_HOST}" -p "${WAREHOUSE_POSTGRES_PORT}" \
+    -U "${PIPELINE_POSTGRES_USER}" -d "${WAREHOUSE_DB}" \
+    -v ON_ERROR_STOP=1 -f /scripts/suumo_address_geocodes.sql

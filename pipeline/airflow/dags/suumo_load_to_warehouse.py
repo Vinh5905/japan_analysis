@@ -13,6 +13,7 @@ from dbt_airflow.graph import GraphBuilder
 from dbt_airflow.manifest import assert_fresh, load_manifest
 from dbt_airflow.selection import Selection, batch_failures, execution_failures
 from loaders.suumo_batch_loader import load_pending_batches, load_warehouse_postgres_config, postgres_connection
+from loaders.suumo_geocoder import enrich_geographies
 
 PROJECT = Path(os.getenv("DBT_PROJECT_DIR", "/opt/airflow/dbt"))
 MANIFEST = load_manifest(PROJECT)
@@ -80,12 +81,24 @@ def suumo_load_to_warehouse():
         if failed_batches or failed_tasks:
             raise RuntimeError(f"Failed batch IDs: {failed_batches}; failed/upstream_failed tasks: {failed_tasks}")
 
+    @task(trigger_rule=TriggerRule.NONE_FAILED)
+    def enrich_geographies_cache(**context):
+        assert_fresh(PROJECT, MANIFEST["_airflow"]["fingerprint"])
+        selection = context["ti"].xcom_pull(task_ids="prepare_transform")
+        enabled = {GRAPH.names['dim_geography'], GRAPH.names['stg_suumo__address_geocodes']}
+        if not selection or not enabled.intersection(selection['execute_ids']):
+            raise AirflowSkipException("No selected geography build; reuse existing dimension/cache")
+        return enrich_geographies()
+
     loader = load_batches()
     prepare = prepare_transform()
     loader >> prepare
     builder = GraphBuilder(MANIFEST, PROJECT)
     transform = builder.build(prepare.operator.dag)
     prepare >> transform
+    enrichment = enrich_geographies_cache()
+    prepare >> enrichment
+    builder.gate_geocoding(enrichment.operator)
     report = report_batch_failures()
     # All tasks must be terminal, including a loader that returned no summary.
     for operator in list(report.operator.dag.tasks):

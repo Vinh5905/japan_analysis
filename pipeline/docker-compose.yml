@@ -75,6 +75,7 @@ services:
       - ./airflow/plugins:/opt/airflow/plugins
       - .:/opt/airflow/pipeline
       - ../analytics/dbt:/opt/airflow/dbt
+      - ../notebook/03_geocode_addresses.ipynb:/opt/airflow/notebook/03_geocode_addresses.ipynb:ro
     networks:
       - pipeline_net
       - source_net
@@ -117,7 +118,7 @@ services:
       AIRFLOW_DB: ${AIRFLOW_DB:-airflow_metadata}
       WAREHOUSE_DB: ${WAREHOUSE_DB:-japan_warehouse}
     volumes:
-      - ./warehouse/init_warehouse.sh:/scripts/init_warehouse.sh:ro
+      - ./warehouse:/scripts:ro
     networks:
       - pipeline_net
     entrypoint: ["/bin/sh", "/scripts/init_warehouse.sh"]

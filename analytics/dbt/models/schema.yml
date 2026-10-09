@@ -1,6 +1,17 @@
 version: 2
 
 models:
+  - name: stg_suumo__address_geocodes
+    description: "One cached result per address for GSI/chome_v1, including failures. Coordinate coverage is optional and must not remove listings."
+    columns:
+      - name: address_query
+        data_tests: [not_null, unique]
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['matched', 'not_found', 'ambiguous', 'invalid_input', 'invalid_response', 'request_error']
   - name: stg_suumo_parser_records
     description: One source-conformed row per parser task from operational raw plus the notebook bootstrap seed; operational wins duplicate task IDs.
     columns:

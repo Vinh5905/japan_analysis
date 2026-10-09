@@ -102,7 +102,14 @@ Table mart.dim_geography {
   ward text
   locality text
   chome text
-  Note: 'Immutable normalized profile. JSONB-based hash distinguishes NULL from text. All-NULL profile exists when observed; no invented administrative codes.'
+  latitude double
+  longitude double
+  coordinate_level text
+  geocode_status text
+  geocode_provider text
+  geocode_matched_address text
+  geocoded_at timestamptz
+  Note: 'Identity is the normalized profile hash, excluding coordinates. Optional chome address-search point, not a building location. All-NULL profiles are retained; no invented administrative codes.'
 }
 
 Table mart.dim_observation_quality {
