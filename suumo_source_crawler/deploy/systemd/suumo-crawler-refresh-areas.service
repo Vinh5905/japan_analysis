@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh SUUMO Osaka City ward catalogue
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/suumo-crawler
+ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/refresh_areas.py --env-file /opt/suumo-crawler/.env --compose-file /opt/suumo-crawler/docker-compose.release.yml
+TimeoutStartSec=2min

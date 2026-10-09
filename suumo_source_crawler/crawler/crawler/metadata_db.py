@@ -175,6 +175,15 @@ class CrawlerMetadataRepository:
             run_id, created_at = cursor.fetchone()
             return CrawlRunRecord(run_id=int(run_id), created_at=created_at)
 
+    def fetch_crawl_run(self, run_id: int, source_id: int) -> CrawlRunRecord:
+        """Reuse only an open, scoped run prepared before preflight."""
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT run_id,created_at FROM crawl_runs WHERE run_id=%s AND source_id=%s AND area_id IS NOT NULL AND pipeline_status='running' AND finished_at IS NULL", (run_id, source_id))
+            row = cursor.fetchone()
+            if row is None:
+                raise RuntimeError("Prepared ward run missing, closed or source mismatch")
+            return CrawlRunRecord(run_id=int(row[0]), created_at=row[1])
+
     def fetch_latest_run_id(self) -> int:
         """Return the latest crawl_runs.run_id, or zero when no runs exist."""
 
@@ -305,11 +314,16 @@ class CrawlerMetadataRepository:
         self,
         source_id: int = 1,
         limit: int = 0,
+        area_id: int | None = None,
     ) -> list[FailedCrawlTask]:
         """Return latest failed crawl tasks for manual HTML reruns."""
 
         limit_clause = ""
         params: list[object] = [source_id]
+        area_clause = ''
+        if area_id is not None:
+            area_clause = 'AND area_id = %s'
+            params.append(area_id)
         if limit > 0:
             limit_clause = "LIMIT %s"
             params.append(limit)
@@ -322,6 +336,7 @@ class CrawlerMetadataRepository:
                         ct.task_id,
                         ct.run_id,
                         cr.source_id,
+                        cr.area_id,
                         cs.base_url,
                         ct.url,
                         ct.url_hash,
@@ -351,6 +366,7 @@ class CrawlerMetadataRepository:
                 FROM ranked_tasks
                 WHERE url_rank = 1
                   AND status = 'failed'
+                  {area_clause}
                 ORDER BY task_id
                 {limit_clause}
                 """,
@@ -403,11 +419,15 @@ class CrawlerMetadataRepository:
                 for row in cursor.fetchall()
             ]
 
-    def fetch_pending_parse_tasks(self, limit: int = 0) -> list[PendingParseTask]:
+    def fetch_pending_parse_tasks(self, limit: int = 0, run_id: int | None = None) -> list[PendingParseTask]:
         """Return crawl tasks whose raw snapshots are ready for parser batching."""
 
         limit_clause = ""
         params: list[object] = []
+        run_clause = ""
+        if run_id is not None:
+            run_clause = "AND ct.run_id = %s"
+            params.append(run_id)
         if limit > 0:
             limit_clause = "LIMIT %s"
             params.append(limit)
@@ -430,6 +450,7 @@ class CrawlerMetadataRepository:
                 WHERE ct.status = 'pending'
                   AND ct.raw_snapshot_id IS NOT NULL
                   AND ct.batch_id IS NULL
+                {run_clause}
                 ORDER BY ct.task_id
                 {limit_clause}
                 """,

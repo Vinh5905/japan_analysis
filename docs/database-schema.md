@@ -117,6 +117,28 @@ Run không lưu status riêng; trạng thái từng URL nằm trong `crawl_tasks
 Số task thành công/lỗi được tính từ `crawl_tasks` theo `run_id` khi cần báo cáo,
 không lưu trực tiếp trong `crawl_runs`.
 
+Migration 009 thêm `vpn_id BIGINT NULL REFERENCES crawl_vpns`, `vpn_snapshot JSONB`:
+VPN được xác nhận và snapshot filename/relative_path/SHA-256 của lượt. Lượt cũ để NULL.
+
+## Pool VPN — migration 009
+
+`crawl_vpns`: vpn_id BIGSERIAL PK; filename TEXT unique; relative_path TEXT unique
+(basename .ovpn); sha256 TEXT; enabled BOOLEAN default true; total_requests,
+activation_successes, activation_failures BIGINT default 0; last_attempt_at,
+last_used_at TIMESTAMPTZ nullable; created_at TIMESTAMPTZ. Đường dẫn thực tế ghép
+với `VPN_CONFIG_DIR` của từng host. Sync không reset ID/counter/history.
+
+`crawl_vpn_attempts`: attempt_id BIGSERIAL PK; run_id/vpn_id FK; snapshot JSONB;
+status pending/success/failed/interrupted; started_at/finished_at TIMESTAMPTZ;
+unique(run_id,vpn_id). Mỗi VPN thử một lần/run. Last attempt gồm thất bại;
+last used chỉ gồm thành công. Interrupted không suy đoán kết quả activation.
+
+`crawl_vpn_requests`: request_id UUID PK; run_id/vpn_id FK; stage TEXT;
+created_at TIMESTAMPTZ. `record_crawl_vpn_request` kiểm tra VPN success của run
+running, insert journal và tăng total_requests atomically/idempotently. Đếm cả
+SUUMO pagination/retry/redirect/lỗi tải, loại cache/filter/internal HTTP.
+Không backfill từ total_urls. Xem [runbook pool VPN](crawler-vpn-pool.md).
+
 ## Bảng `raw_snapshots`
 
 Lưu metadata của raw HTML/JSON đã được fetch và upload lên MinIO.
@@ -310,3 +332,13 @@ suumo/data/{timestamp}.json.gz
 
 `timestamp` dùng UTC chi tiết tới microsecond, format
 `YYYYMMDDTHHMMSSffffffZ`, để các batch tạo rất sát nhau vẫn không đè path.
+
+## Danh mục ward và pipeline (migration 008)
+
+`crawl_area_catalogs`: composite primary key `(source_id, scope)`, `catalog_url` TEXT và `synced_at` TIMESTAMPTZ nullable đến lần sync thành công. Scope hiện tại `osaka_city`.
+
+`crawl_areas`: `area_id` BIGSERIAL, `source_id` FK, `prefecture`/`municipality`/`ward` TEXT nonnull, `district` nullable, `display_name` tiếng Anh riêng, `sc` TEXT 5 chữ số. Unique địa chỉ `(source_id,prefecture,municipality,ward)` và unique `(source_id,sc)` deferred để đổi chéo mã trong một transaction. Chỉ `sc` được refresh trên khu vực có sẵn; thống kê lấy trực tiếp từ lịch sử.
+
+`crawl_runs` bổ sung `area_id` FK, `pipeline_key` TEXT unique nullable cho lịch sử/HTML-only, `search_url` TEXT, `area_snapshot` JSONB, `pipeline_status` TEXT nullable, `pipeline_finished_at` và `cleanup_confirmed_at` TIMESTAMPTZ. Row pipeline tạo trước VPN; key unique giữ idempotency. `finished_at` vẫn là HTML. Trạng thái running/completed/preflight_failed/crawl_failed/cleanup_failed/interrupted; lịch sử cũ không suy diễn pipeline, backfill ward Yodogawa theo xác nhận.
+
+Xem [runbook ward](crawler-ward-dispatch.md) về budget/ngày, hàng chờ, recovery và triển khai.

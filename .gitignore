@@ -26,6 +26,7 @@ htmlcov/
 data/
 logs/
 tmp/
+state/
 vpn_config/
 *.log
 

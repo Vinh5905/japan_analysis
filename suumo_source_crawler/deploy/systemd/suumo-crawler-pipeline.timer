@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the SUUMO ward queue and daily budget every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00 Asia/Ho_Chi_Minh
+Persistent=true
+AccuracySec=1s
+Unit=suumo-crawler-dispatch.service
+
+[Install]
+WantedBy=timers.target

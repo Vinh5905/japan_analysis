@@ -147,3 +147,12 @@ clean: ## Stop the Python crawler container and remove anonymous containers/netw
 .PHONY: clean-volumes
 clean-volumes: ## Stop the Python crawler container and remove named volumes. This deletes local Python cache data.
 	$(COMPOSE) --env-file $(ENV_FILE) down --volumes --remove-orphans
+
+# Private configs are uploaded separately; they never enter the release image.
+host ?= thuevpsgiare
+vpn_source ?= $(CURDIR)/vpn_config
+remote_root ?= /opt/suumo-crawler
+VPN_DIR_OPTION := $(if $(vpn_dir),--vpn-dir "$(vpn_dir)",)
+.PHONY: vpn-sync
+vpn-sync: ## Upload new VPN filenames to VPS and register DB rows; opts="--dry-run" previews
+	$(PYTHON) scripts/vpn_pool.py --host "$(host)" --source "$(vpn_source)" --remote-root "$(remote_root)" $(VPN_DIR_OPTION) $(opts) sync

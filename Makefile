@@ -9,6 +9,9 @@ RELEASE_COMPOSE_CMD := $(COMPOSE) --env-file $(RELEASE_ENV_FILE) -f $(RELEASE_CO
 DOCKERHUB_IMAGE ?= kevinpham9257/suumo-crawler
 tag ?= latest
 PLATFORMS ?= linux/amd64,linux/arm64
+DEPLOY_HOST ?= $(host)
+DEPLOY_TARGET ?= /opt/suumo-crawler
+RELEASE_BUNDLE ?= tmp/releases/suumo-host-$(tag).tar.gz
 export DOCKER_BUILDKIT ?= 1
 export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
@@ -119,6 +122,15 @@ docker-inspect-release: ## Inspect the remote release image manifest and support
 release-config: ## Validate and render release compose config
 	$(RELEASE_COMPOSE_CMD) --profile tasks --profile tools config
 
+.PHONY: release-package
+release-package: ## Package the complete host runtime locally; pass tag=<version>
+	python3 suumo_source_crawler/scripts/deploy_release.py package --tag "$(tag)" --output "$(RELEASE_BUNDLE)"
+
+.PHONY: release-deploy
+release-deploy: ## Local-only deployment plan; pass host=<SSH alias> tag=<version> opts="--apply" to deploy
+	@test -n "$(DEPLOY_HOST)" || { printf 'Usage: make release-deploy host=suumo-vps tag=<version> [opts="--apply"]\n'; exit 1; }
+	python3 suumo_source_crawler/scripts/deploy_release.py deploy --tag "$(tag)" --host "$(DEPLOY_HOST)" --target "$(DEPLOY_TARGET)" $(opts)
+
 .PHONY: release-pull
 release-pull: ## Pull release images
 	$(RELEASE_COMPOSE_CMD) --profile tasks --profile tools pull
@@ -165,8 +177,8 @@ release-minio-preview: release-up ## Preview a MinIO object from release runtime
 	$(RELEASE_COMPOSE_CMD) run --rm suumo-tools minio-preview $(path) $(opts)
 
 .PHONY: release-manual-rerun-failed-html
-release-manual-rerun-failed-html: release-up ## Rerun failed HTML tasks in release runtime, optionally pass opts="--limit 10"
-	$(RELEASE_COMPOSE_CMD) run --rm suumo-tools manual-rerun-failed-html $(opts)
+release-manual-rerun-failed-html: ## Host-managed VPN rerun for one ward; opts="--area-id 1 --limit 10"
+	python3 suumo_source_crawler/scripts/run_release_pipeline.py --compose-file docker-compose.release.yml --env-file .env --rerun-failed-html $(opts)
 
 .PHONY: release-shell
 release-shell: release-up ## Open a shell inside the release crawler image

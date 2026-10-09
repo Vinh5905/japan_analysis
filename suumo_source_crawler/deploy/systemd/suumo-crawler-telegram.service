@@ -1,0 +1,19 @@
+[Unit]
+Description=Private Telegram control for SUUMO crawler
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/suumo-crawler
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/telegram_control.py --env-file /opt/suumo-crawler/.env --compose-file /opt/suumo-crawler/docker-compose.release.yml
+Restart=on-failure
+RestartSec=20
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

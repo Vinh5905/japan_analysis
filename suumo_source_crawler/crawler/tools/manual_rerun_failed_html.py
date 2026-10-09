@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -114,6 +115,8 @@ def run_suumo_html(
     links_file: Path,
     source_id: int,
     loglevel: str,
+    run_id: int | None = None,
+    area_label: str = "",
 ) -> subprocess.CompletedProcess[str]:
     """Run suumo_html against the generated manual links file."""
 
@@ -139,6 +142,7 @@ def run_suumo_html(
         cwd=PROJECT_ROOT,
         check=False,
         text=True,
+        env={**os.environ, "SUUMO_RUN_ID": str(run_id), "TELEGRAM_PIPELINE_RUN_ID": str(run_id), "SUUMO_RUN_AREA": area_label} if run_id else dict(os.environ),
     )
 
 
@@ -211,82 +215,75 @@ def main() -> int:
     """Run manual failed-task HTML reruns and write failed-again reports."""
 
     args = parse_args()
-    links_file = Path(args.links_file)
-    report_dir = Path(args.report_dir)
     repository = CrawlerMetadataRepository.from_env()
+    exit_code = 0
     try:
-        failed_tasks = repository.fetch_failed_crawl_tasks(
-            source_id=args.source_id,
-            limit=args.limit,
-        )
-        deduped_tasks, task_groups = dedupe_failed_tasks(failed_tasks)
-        if not deduped_tasks:
+        context_run, context_area = None, None
+        required = os.environ.get('SUUMO_REQUIRE_VPN_CONTEXT', '').lower() in {'true','1','yes'}
+        if required and not args.dry_run:
+            rid, vid = os.environ.get('SUUMO_RUN_ID',''), os.environ.get('SUUMO_VPN_ID','')
+            if not rid.isdigit() or not vid.isdigit():
+                raise RuntimeError('Use the host runner --rerun-failed-html --area-id; verified VPN context required')
+            with repository.connection.cursor() as cursor:
+                cursor.execute("""SELECT r.run_id,r.area_id FROM crawl_runs r JOIN crawl_vpn_attempts a
+                  ON a.run_id=r.run_id AND a.vpn_id=r.vpn_id WHERE r.run_id=%s AND r.vpn_id=%s
+                  AND r.source_id=%s AND r.pipeline_status='running' AND a.status='success'
+                  AND r.cleanup_confirmed_at IS NULL AND r.finished_at IS NULL
+                  AND r.area_id IS NOT NULL""",(int(rid),int(vid),args.source_id))
+                context = cursor.fetchone()
+            if not context:
+                raise RuntimeError('Rerun VPN context is invalid or closed')
+            context_run, context_area = context
+        tasks = repository.fetch_failed_crawl_tasks(source_id=args.source_id, limit=args.limit, area_id=context_area)
+        groups = {}
+        # Group by the original run's stable ward identity, never infer from URL.
+        with repository.connection.cursor() as cursor:
+            cursor.execute("SELECT run_id,area_id,area_snapshot FROM crawl_runs WHERE run_id=ANY(%s)", ([t.run_id for t in tasks],))
+            scopes = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+        for task in tasks:
+            area_id, snapshot = scopes[task.run_id]
+            if area_id is None:
+                raise RuntimeError("Failed task has no ward; apply the confirmed legacy backfill first")
+            if context_area is not None and area_id != context_area:
+                continue
+            groups.setdefault(area_id, []).append(task)
+        if not groups:
             print("No failed crawl_tasks found for manual rerun.")
-            return 0
-
-        write_links_file(links_file=links_file, failed_tasks=deduped_tasks)
-        print(
-        f"Selected {len(failed_tasks)} latest failed task rows "
-            f"as {len(deduped_tasks)} unique URLs.",
-        )
-        print(f"Wrote manual suumo_html links to {links_file}")
-
-        if args.dry_run:
-            report = build_report(
-                manual_run_id=None,
-                source_id=args.source_id,
-                selected_tasks=deduped_tasks,
-                task_groups=task_groups,
-                rerun_results=[],
-                scrapy_exit_code=None,
-                dry_run=True,
-            )
-            json_path, ids_path = write_report(report_dir=report_dir, report=report)
-            print(f"Dry run report: {json_path}")
-            print(f"Dry run failed-id list: {ids_path}")
-            return 0
-
-        latest_run_id_before = repository.fetch_latest_run_id()
+        for area_id, failed_tasks in groups.items():
+            selected, task_groups = dedupe_failed_tasks(failed_tasks)
+            links_file = Path(args.links_file).with_name(f"area_{area_id}_{__import__('uuid').uuid4().hex}_" + Path(args.links_file).name)
+            write_links_file(links_file, selected)
+            manual_run_id, code, results = None, None, []
+            if not args.dry_run:
+                # This tool reruns HTML only, so it has no host pipeline key.
+                # Reserve the exact run instead of racing MAX(run_id).
+                with repository.connection.cursor() as cursor:
+                    if context_run is not None:
+                        manual_run_id = context_run
+                    else:
+                        cursor.execute("""INSERT INTO crawl_runs(source_id,area_id,area_snapshot,created_by,pipeline_status)
+                          SELECT source_id,area_id,jsonb_build_object('area_id',area_id,'prefecture',prefecture,
+                           'district',district,'municipality',municipality,'ward',ward,'display_name',display_name,'sc',sc),
+                           'manual','running' FROM crawl_areas WHERE area_id=%s AND source_id=%s RETURNING run_id""", (area_id,args.source_id))
+                        manual_run_id = cursor.fetchone()[0]
+                snapshot = scopes[failed_tasks[0].run_id][1] or {}
+                label = " · ".join(str(snapshot[k]) for k in ("prefecture","district","municipality","ward") if snapshot.get(k))
+                result = run_suumo_html(links_file,args.source_id,args.loglevel,manual_run_id,label)
+                code = result.returncode
+                exit_code = exit_code or code
+                results = repository.fetch_task_results_for_run(manual_run_id)
+                if context_run is None:
+                    with repository.connection.cursor() as cursor:
+                        cursor.execute("UPDATE crawl_runs SET pipeline_status=NULL WHERE run_id=%s", (manual_run_id,))
+            report = build_report(manual_run_id,args.source_id,selected,task_groups,results,code,args.dry_run)
+            report['area_id'] = area_id
+            json_path, ids_path = write_report(Path(args.report_dir), report)
+            print(f"Ward {area_id}; HTML run {manual_run_id}; report {json_path}; IDs {ids_path}")
+            if not args.keep_links_file:
+                links_file.unlink(missing_ok=True)
     finally:
         repository.close()
-
-    scrapy_result = run_suumo_html(
-        links_file=links_file,
-        source_id=args.source_id,
-        loglevel=args.loglevel,
-    )
-
-    repository = CrawlerMetadataRepository.from_env()
-    try:
-        manual_run_ids = repository.fetch_manual_run_ids_after(
-            run_id=latest_run_id_before,
-            source_id=args.source_id,
-        )
-        if not manual_run_ids:
-            raise RuntimeError("suumo_html did not create a manual crawl_run")
-
-        manual_run_id = manual_run_ids[-1]
-        rerun_results = repository.fetch_task_results_for_run(manual_run_id)
-        report = build_report(
-            manual_run_id=manual_run_id,
-            source_id=args.source_id,
-            selected_tasks=deduped_tasks,
-            task_groups=task_groups,
-            rerun_results=rerun_results,
-            scrapy_exit_code=scrapy_result.returncode,
-            dry_run=False,
-        )
-        json_path, ids_path = write_report(report_dir=report_dir, report=report)
-        print(f"Manual rerun crawl_run: {manual_run_id}")
-        print(f"Failed again original task ids: {report['failed_again_original_task_ids']}")
-        print(f"Failed-again report: {json_path}")
-        print(f"Failed-again id list: {ids_path}")
-    finally:
-        repository.close()
-        if not args.keep_links_file and links_file.exists():
-            links_file.unlink()
-
-    return scrapy_result.returncode
+    return exit_code
 
 
 if __name__ == "__main__":

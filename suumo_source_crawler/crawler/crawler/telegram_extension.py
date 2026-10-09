@@ -194,6 +194,8 @@ class TelegramNotificationExtension:
         if spider.name == "suumo_links":
             new_links = len(getattr(spider, "seen_url_hashes", set()))
 
+        if stats.get('vpn/accounting_failed'):
+            reason = 'vpn_accounting_failed'
         status = "completed"
         warning_message = self._warning_message(spider.name, new_links)
         if reason not in SUCCESS_CLOSE_REASONS:
@@ -312,6 +314,7 @@ class TelegramNotificationExtension:
         if summary.job_name == "suumo_links":
             fields["URL mới"] = summary.new_links
         elif summary.job_name == "suumo_html":
+            fields["URL đã xử lý"] = summary.html_success_count + summary.html_failed_count
             fields["HTML thành công"] = summary.html_success_count
             fields["HTML thất bại"] = summary.html_failed_count
         elif summary.job_name == "suumo_page":

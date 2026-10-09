@@ -1,5 +1,6 @@
 .git/
 .gitignore
+**/vpn_config/
 
 # Local env files must stay on the host. Release images receive config at runtime.
 .env

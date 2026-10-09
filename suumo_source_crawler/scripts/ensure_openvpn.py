@@ -23,6 +23,7 @@ from crawler.telegram_notifier import (  # noqa: E402
     machine_name,
 )
 from scripts.run_release_pipeline import read_env_file  # noqa: E402
+from scripts.telegram_state import state_for, install_context  # noqa: E402
 
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
@@ -93,6 +94,7 @@ def run_command(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=5,
     )
 
 
@@ -371,27 +373,36 @@ def main() -> int:
     host_environment.setdefault("TELEGRAM_HOSTNAME", socket.gethostname())
     notifier = TelegramNotifier.from_env(host_environment)
     hostname = machine_name(host_environment)
+    state = state_for(args.env_file)
+    from scripts.telegram_control import Host
+    from scripts.crawl_dispatcher import prepare
+    try:
+        run = prepare(Host(args.env_file.resolve(), args.env_file.resolve().parent / "docker-compose.release.yml", dotenv_values), state)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Cannot prepare DB crawl run: {type(exc).__name__}; VPN not started", file=sys.stderr)
+        return 2
+    install_context(run)
     notify_vpn_event(
         notifier,
         "VPN KIỂM TRA BẮT ĐẦU",
         {
             "Service": args.service,
             "Interface": args.interface,
-            "Số lần tự bật tối đa": args.restart_attempts,
+            "Mỗi cấu hình": "một lần thử, tối đa 60 giây",
             "Host": hostname,
             "Crawler": "chưa được phép chạy cho tới khi VPN khỏe",
         },
     )
-    healthy = ensure_vpn(
-        service=args.service,
-        interface=args.interface,
-        restart_attempts=args.restart_attempts,
-        checks_per_attempt=args.checks_per_attempt,
-        required_consecutive_checks=args.required_consecutive_checks,
-        check_interval_seconds=args.check_interval_seconds,
-        notifier=notifier,
-        hostname=hostname,
-    )
+    try:
+        from scripts.vpn_pool import select_vpn
+        healthy = select_vpn(
+            Host(args.env_file.resolve(), args.env_file.resolve().parent / "docker-compose.release.yml", dotenv_values),
+            state, args.service, args.interface, notifier=notifier,
+        )
+    except BaseException:
+        state.progress("vpn_preflight_failed", status="failed")
+        raise
+    state.progress("vpn_ready" if healthy else "vpn_preflight_failed", status="running" if healthy else "failed")
     return 0 if healthy else 1
 
 

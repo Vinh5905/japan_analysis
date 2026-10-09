@@ -5,6 +5,32 @@
 
 Dự án này là nền tảng local cho Data Engineer phát triển nhiều crawler/pipeline. PostgreSQL và MinIO nằm ở root để dùng chung, còn Python runtime của từng crawler nằm trong folder crawler tương ứng.
 
+## Trạng thái VPS mới nhất — 2026-10-09
+
+Đã deploy **`20261009-vpn-03`**: danh mục 23 VPN ở `/opt/suumo-crawler/vpn_config`,
+migration 009 gồm crawl_vpns/attempts/request journal và run VPN snapshot; chọn lần
+thử xa nhất, mỗi VPN thử một lần tối đa 60s, chỉ fallback sau shutdown xác nhận.
+Đếm SUUMO pages/HTML/retry/redirect/lỗi tải atomically/idempotently; thiếu context/DB
+lỗi dừng pipeline kể cả exit 0. `make -C suumo_source_crawler vpn-sync` chỉ upload
+tên mới và repair DB registration, portable root VPN_CONFIG_DIR + relative_path.
+154 test gồm PostgreSQL QA đạt; image arm64/amd64 HTTP localhost acceptance đạt,
+managed rerun cùng VPN/run và limit đúng ward. VPS 24 host checksums/6 image
+checksums, 23 file/DB/quyền, menu 9 lệnh, dispatcher success đã kiểm chứng. Sync
+lại skip 23, upload/register 0. Tổng cũ 39 run/65.551 URL giữ nguyên; VPN stats
+bắt đầu 0. Bot/timer active, crawler/VPN inactive; lịch/cooldown vẫn
+**2026-10-10 00:00 +07**. Không bật VPN/crawl thật trong deploy. Backup DB/state/config
+`.releases/20261009-vpn-03-c9a3878b`, host stdin fix `.releases/20261009-vpn-03-7759abb7`.
+Digest `sha256:21cb803aa1b1dcca4c7cb924b001631c9009278704ea7cc62eadbad78b588a90`.
+Xem [release VPN](crawler-release-20261009-vpn-03.md) và [runbook pool](crawler-vpn-pool.md).
+
+Đã deploy **`20261009-wards-01`**: mỗi pipeline một ward Osaka City, danh mục 24 ward có area_id ổn định, run DB tạo trước VPN, HTML dùng lại run và parser scope theo run. Dispatcher dùng timer mỗi phút + wake Telegram/cleanup, mục tiêu 10.000 URL/ngày, giới hạn 5 lượt gồm thủ công/lỗi preflight, manual được vượt, queue SQLite tối đa một ward không hết hạn, nghỉ cleanup + 1 giờ và recovery không replay. Ngày tính theo created_at tại Asia/Ho_Chi_Minh. Migration 008 backfill 39 lượt cũ SUUMO về Yodogawa, giữ **65.551 URL** và trạng thái pipeline cũ NULL. **130 test đạt** gồm DB QA và kiểm tra image spider/repository/rerun không crawl thật. VPS: 22 checksum, digest/import, menu 9 lệnh, 8 view đọc, DB/backfill/backup đã kiểm chứng; bot/timer active, dispatcher ticks success, crawler/VPN inactive. Lịch mới bắt đầu **2026-10-10 00:00 +07**; không khởi động crawler/VPN để thử.
+
+SUUMO trả 503 cho IP VPS khi sync đầu; installer rollback file/lịch/bot rồi deploy lại với HTML SUUMO vừa tải ở local, SHA-256 kiểm chứng và giữ trong backup. Refresh Telegram vẫn tải trực tiếp; khi 503 sẽ báo lỗi và giữ catalog. Backup thành công `.releases/20261009-wards-01-4bd4e920`, backup trước migration `.releases/20261009-wards-01-3bb2c3cf`. Image digest `sha256:988d6ca8a74e3ab5d5aa7e2f8e97f816bc3e012519579ab8ba060ef3dd232b3d`. Xem [biên bản release ward](crawler-release-20261009-wards-01.md) và [runbook hiện tại](crawler-ward-dispatch.md). Các đoạn release cũ dưới đây giữ để tra lịch sử; lịch daily cũ đã được thay.
+
+Đã cập nhật giao diện bot/host bundle lên `20261009-telegram-02`, áp dụng hai skill Telegram cài cho Codex ở `~/.codex/skills`. `/start` mở menu inline; các màn hình xem có Cập nhật/Menu và sửa ngay tin hiện tại. Thẻ số liệu/lịch sử/lịch/xác nhận đã làm gọn; quyền và chống chạy lặp giữ nguyên. 96 test đạt gồm SQL local, checksum/menu/render báo cáo VPS đã kiểm chứng; SQLite/cấu hình/lịch giữ nguyên. Image tag 02 cùng digest bản 01 vì chỉ đổi bot host. Bot active, crawler/VPN inactive; chưa chạy thử crawl/cleanup thật. Xem [biên bản cập nhật](crawler-release-20261009-telegram-02.md) và [nguồn skill Codex](telegram-codex-skills.md).
+
+Đã deploy crawler/host bundle `20261009-telegram-01` qua `ssh thuevpsgiare` vào `/opt/suumo-crawler`; bot `@suumo_crawler_bot` enabled/active. Cleanup VPN và unit mới đã cài; chưa chạy thử crawler/cleanup thật theo yêu cầu người dùng. Lịch cũ giữ enabled/active, mỗi ngày 00:00 giờ Việt Nam, lần kế tiếp 2026-10-10 00:00 +07. OpenVPN inactive, crawler rảnh; PostgreSQL/MinIO healthy, volumes và credentials giữ nguyên. DB source 1 vẫn 39 lượt/65.551 URL. 84 test đạt gồm SQL PostgreSQL local; host checksum/menu/status/history/total/schedule và image import/digest đã kiểm chứng trên VPS. Installer tái sử dụng image infra đúng tag sẵn có, chỉ pull infra thiếu để tránh lỗi registry MinIO. Airflow/dbt/warehouse chưa deploy trong lần này. Xem [biên bản release](crawler-release-20261009-telegram-01.md); các ghi chú "chưa deploy" bên dưới mô tả trạng thái trước lần phát hành này.
+
 ## Những gì đã thiết lập
 
 - `docker-compose.yml`: orchestration root cho hạ tầng dùng chung gồm `postgres`, `minio`, và `minio-init`.
@@ -40,6 +66,7 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 - `suumo_source_crawler/crawler/crawler/airflow_notify.py`: helper optional để `suumo_page` trigger Airflow REST API sau khi tạo `load_batches.pending`; notify mặc định tắt và là best-effort.
 - `suumo_source_crawler/crawler/crawler/telegram_notifier.py` và `telegram_extension.py`: gửi lifecycle Telegram theo kiểu fail-open, chỉ tổng hợp ERROR/CRITICAL khi job kết thúc, đồng thời ghi summary từng spider để host-side pipeline runner tổng hợp.
 - `suumo_source_crawler/scripts/run_release_pipeline.py`: runner chạy release theo thứ tự bootstrap → links → html → page, dùng image local với `--pull never`, giữ log ở stdout/journald và gửi Telegram khi pipeline bắt đầu, hoàn thành hoặc lỗi.
+- Vòng đời VPN bổ sung local ngày 2026-10-09, chưa deploy VPS: `scripts/stop_openvpn.py` dừng/xác nhận các container pipeline còn sót trước khi tắt tunnel, rồi thử stop OpenVPN tối đa 3 lần (30 checks/lần, 2 giây, cần 3 checks liên tiếp): service inactive/failed với MainPID=0, tun0 absent/DOWN và không còn route IPv4/IPv6 qua tun0. Unit có `ExecStopPost` và `TimeoutStopSec=10min`; cleanup lỗi/timeout làm service failed. Runner thủ công tự preflight/cleanup trong finally; unit dùng `--vpn-managed-by-systemd` để giao cho hooks. Shutdown script được đưa vào host bundle. Không disable OpenVPN hay đổi route SSH; không kiểm chứng host/VPS thật.
 - `suumo_source_crawler/scripts/ensure_openvpn.py`: preflight host-side cho systemd pipeline. Script đọc cùng `.env` production, gửi Telegram khi bắt đầu kiểm tra, VPN đã bật/chưa bật, từng lần tự bật và kết quả cuối; xác nhận service OpenVPN active, `tun0` UP và hai route `redirect-gateway def1` đi qua tunnel. Service đang active/activating được chờ tối đa 4 phút để tự reconnect, sau đó reset/restart non-blocking tối đa 3 lần, và phải đạt 3 health check liên tiếp trước khi cho pipeline chạy. Unit `suumo-crawler-pipeline.service` gọi script bằng `ExecStartPre`; `TimeoutStartSec=infinity` để crawl dài không bị systemd cắt sau 20 phút. VPN không khỏe thì crawler không được chạy. Script cố ý không tự hủy SSH rollback vì IP Wi-Fi quản trị là động.
 - `suumo_source_crawler/crawler/crawler/spiders/suumo_links.py`: Scrapy spider `suumo_links` dùng để crawl toàn bộ page kết quả SUUMO và ghi listing URLs vào `suumo_source_crawler/crawler/tmp/suumo_links.txt`. File output được truncate mỗi lần spider chạy; trước khi ghi link, spider hash URL rồi bỏ qua URL đã có trong `crawl_tasks.url_hash`.
 - `suumo_source_crawler/crawler/crawler/spiders/suumo_html.py`: Scrapy spider `suumo_html` đọc tmp links mới, tạo `crawl_runs` khi mở spider, claim một `crawl_tasks` row qua downloader middleware khi request thật sự bắt đầu, upload HTML gzip lên MinIO, ghi `raw_snapshots`, update task sang `pending` hoặc `failed`, tăng `crawl_runs.total_urls` khi task ra kết quả, finalize task đang dở thành `failed` khi spider đóng, và ghi `finished_at`. Trong một run, cùng `url_hash` chỉ có một task.
@@ -160,6 +187,14 @@ Sau khi chạy:
 
 ## Ghi chú về `.env`
 
+### Deploy crawler trên local — 2026-10-09
+
+- Đối chiếu repository và runbook, chưa kiểm tra lại VPS live: source crawler/main/SQL/wrapper được đóng trong release image; host-side `scripts/run_release_pipeline.py`, `scripts/ensure_openvpn.py` và dependency `crawler/crawler/telegram_notifier.py` phải được đồng bộ riêng lên VPS. `telegram_notifier.py` dùng cả trên host và trong image, nên sửa file này cần cập nhật cả hai nơi.
+- Đã thêm `scripts/deploy_release.py`: `make release-package tag=<version>` tạo bundle host theo allowlist/checksum; `make release-deploy host=<SSH alias> tag=<version>` mặc định dry-run hoàn toàn local, chỉ `opts="--apply"` mới gọi SSH/scp. Tag `latest` bị từ chối trong workflow mới. VPS cần `.env` có sẵn và user quản trị; script giữ các cấu hình khác, chỉ cập nhật image tag, kiểm tra/pull trước khi thay runtime, backup file/config và rollback file khi áp dụng infra lỗi. Không tự bật/tắt VPN, chạy bootstrap/migration/crawler hoặc enable timer mới.
+- Host bundle gồm cả preflight, runner, Telegram helper và `scripts/runtime_lock.py`; runner/deploy dùng lock chung, service đang active/activating/deactivating bị chặn deploy. Timer active được tạm dừng trong deploy và khôi phục sau khi thả lock. `deploy/systemd/suumo-crawler-pipeline.timer` đã version-control: 00:00 Asia/Ho_Chi_Minh, Persistent=true; giữ lịch hiện có trừ khi `--update-timer`. Không kết nối hay deploy lên VPS trong task này.
+- Đã nối các biến `SUUMO_HTML_*`, `SUUMO_PAGE_*`, `SUUMO_SOURCE_*`, `SUUMO_RUN_CREATED_BY` từ environment vào Scrapy settings; thêm URL tìm kiếm `SUUMO_SEARCH_URL` và các biến concurrency/AutoThrottle vào cả Compose local/release. Links và HTML dùng chung `SUUMO_HTML_LINKS_FILE`; mặc định giữ bộ lọc/tốc độ cũ. `.env.release.example` dùng tag version minh họa và mô tả các knobs mới.
+- Runbook đã thay copy thủ công bằng deploy bundle; tài liệu chi tiết ở `docs/crawler-deployment.md`. 46 test local đạt, bao phủ archive/checksum, dry-run không subprocess, giữ secrets/tmp/lịch, chặn service/container crawler đang chạy, registry failure, rollback/shared lock, xác nhận VPN shutdown và cleanup sau preflight/crawler/Python error. Compose local/release validate đạt và đã kiểm tra environment Compose vào settings. Docker daemon local chưa chạy nên chưa kiểm chứng container hoặc VPS thực tế.
+
 Docker Compose tự động đọc file `.env` nằm cùng thư mục với `docker-compose.yml` để nội suy các biến dạng `${VAR}` trong compose file. Root `Makefile` truyền rõ `--env-file .env`; `suumo_source_crawler/Makefile` truyền `--env-file ../.env` để dùng chung cấu hình hạ tầng.
 
 Nếu cần inject toàn bộ biến `.env` vào runtime container ngoài các biến đã khai báo trong `environment`, có thể thêm `env_file: .env` cho service tương ứng. Hiện tại compose chỉ truyền các biến cần thiết một cách tường minh để tránh đưa thừa cấu hình vào container.
@@ -168,3 +203,11 @@ Nếu cần inject toàn bộ biến `.env` vào runtime container ngoài các b
 ## Geocoding chōme — 2026-10-08
 
 Notebook `03_geocode_addresses.ipynb` self-contained bổ sung điểm GSI theo địa chỉ chōme, cache/output local riêng. Loader `pipeline/loaders/suumo_geocoder.py` quản lý source cache `raw.suumo_address_geocodes`; tạo source bằng `make -C pipeline geocode-init` trước khi chạy DAG trên warehouse đã tồn tại. Cosmos gate `enrich_geographies_cache` chờ mart observations và address-side quality tests, rồi cho source cache/staging/dim geography chạy. Nhánh analytics-only không gọi HTTP. Tọa độ ở dim, fact dùng FK geography_key giữ nguyên; views history/latest có tọa độ. Không sửa charts. Xem `docs/suumo-geocoding.md`. Test graph lấy số node từ manifest thay vì hardcode số cũ.
+
+## Telegram control — bổ sung local 2026-10-09
+
+- `scripts/telegram_control.py`: bot long polling Python stdlib, chỉ private chat và sender đúng `TELEGRAM_CHAT_ID`; menu start/help/run_crawl/status/schedule/history/total. Chạy cần xác nhận 2 phút, một lần; lệnh quá 5 phút bị từ chối, không có lệnh stop/sửa lịch.
+- `scripts/telegram_state.py`: SQLite `state/telegram-control.sqlite3` giữ offset trước side effect, xác nhận, nguồn manual tiêu thụ một lần và bước pipeline. Host bundle không chứa state; deploy giữ SQLite, restart bot active, chỉ enable bot mới khi `--enable-telegram-bot`. Mẫu cấu hình mặc định false.
+- Preflight tạo mã lượt trước VPN; runner truyền manual riêng vào image. Tin HTML có icon/tiêu đề đậm, escape/redact/giới hạn; summary toàn pipeline gửi sau cleanup xác nhận VPN đã tắt. Lỗi SQLite không bỏ qua cleanup VPN.
+- History/total đọc `crawl_runs` cùng source qua container postgres/psql; tổng là SUM(total_urls), bao gồm lỗi/rerun/đang chạy. Lịch lấy systemd live qua systemctl/busctl/timedatectl.
+- 79 test offline đạt; 2 test SQL PostgreSQL opt-in chưa chạy vì Docker local chưa hoạt động. Chưa kết nối VPS hoặc bật bot thật; cần image tag mới cùng bundle để phát hành. Xem [runbook Telegram](telegram-crawler-control.md).

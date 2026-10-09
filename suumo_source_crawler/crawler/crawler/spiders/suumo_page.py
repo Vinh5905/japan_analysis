@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import scrapy
@@ -125,6 +126,7 @@ class SuumoPageSpider(scrapy.Spider):
         metadata_repository = self.require_metadata_repository()
         pending_tasks = metadata_repository.fetch_pending_parse_tasks(
             limit=self.task_limit,
+            run_id=int(os.environ["SUUMO_RUN_ID"]) if os.environ.get("SUUMO_RUN_ID") else None,
         )
         if not pending_tasks:
             self.logger.warning("No pending SUUMO crawl_tasks found for parser batching")

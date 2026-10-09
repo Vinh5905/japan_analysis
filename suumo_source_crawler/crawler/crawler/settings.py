@@ -7,6 +7,25 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import os
+
+
+def env_int(name, default, minimum=0):
+    """Read and validate a numeric runtime knob before a crawl starts."""
+    value = int(os.environ.get(name, str(default)))
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return value
+
+
+def env_float(name, default, minimum=0):
+    """Read and validate a throttling value from the runtime environment."""
+    value = float(os.environ.get(name, str(default)))
+    if not minimum <= value < float("inf"):
+        raise ValueError(f"{name} must be finite and >= {minimum}")
+    return value
+
+
 BOT_NAME = "crawler"
 
 SPIDER_MODULES = ["crawler.spiders"]
@@ -23,15 +42,19 @@ ADDONS = {}
 ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
-CONCURRENT_REQUESTS = 2
-CONCURRENT_REQUESTS_PER_DOMAIN = 1
+CONCURRENT_REQUESTS = env_int("SUUMO_CONCURRENT_REQUESTS", 2, minimum=1)
+CONCURRENT_REQUESTS_PER_DOMAIN = env_int("SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN", 1, minimum=1)
 
 # AutoThrottle owns request pacing. DOWNLOAD_DELAY is intentionally unset because
 # Scrapy treats it as a fixed minimum delay even when AutoThrottle is enabled.
 AUTOTHROTTLE_ENABLED = True
-AUTOTHROTTLE_START_DELAY = 3
-AUTOTHROTTLE_MAX_DELAY = 15
-AUTOTHROTTLE_TARGET_CONCURRENCY = 0.5
+AUTOTHROTTLE_START_DELAY = env_float("SUUMO_AUTOTHROTTLE_START_DELAY", 3)
+AUTOTHROTTLE_MAX_DELAY = env_float("SUUMO_AUTOTHROTTLE_MAX_DELAY", 15)
+AUTOTHROTTLE_TARGET_CONCURRENCY = env_float("SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY", 0.5)
+if AUTOTHROTTLE_MAX_DELAY < AUTOTHROTTLE_START_DELAY:
+    raise ValueError("SUUMO_AUTOTHROTTLE_MAX_DELAY must be >= start delay")
+if AUTOTHROTTLE_TARGET_CONCURRENCY <= 0:
+    raise ValueError("SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY must be > 0")
 AUTOTHROTTLE_DEBUG = False
 
 # Keep SUUMO responses on the desktop HTML layout that current selectors parse.
@@ -50,17 +73,22 @@ FAKE_USER_AGENT_FALLBACK = (
 )
 
 # Parser reads pending crawl_tasks and writes compressed JSON arrays to suumo/data.
-SUUMO_PAGE_TASK_LIMIT = 0
-SUUMO_PAGE_BATCH_SIZE = 100
-SUUMO_PAGE_BATCH_SECONDS = 300
-SUUMO_SOURCE_BASE_URL = "https://suumo.jp"
+SUUMO_PAGE_TASK_LIMIT = env_int("SUUMO_PAGE_TASK_LIMIT", 0)
+SUUMO_PAGE_BATCH_SIZE = env_int("SUUMO_PAGE_BATCH_SIZE", 100, minimum=1)
+SUUMO_PAGE_BATCH_SECONDS = env_int("SUUMO_PAGE_BATCH_SECONDS", 300, minimum=1)
+SUUMO_SOURCE_BASE_URL = os.environ.get("SUUMO_SOURCE_BASE_URL", "https://suumo.jp")
+SUUMO_SEARCH_URL = os.environ.get("SUUMO_SEARCH_URL") or (
+    "https://suumo.jp/jj/chintai/ichiran/FR301FC001/"
+    "?ar=060&bs=040&ta=27&sc=27123&cb=0.0&ct=9999999&et=9999999"
+    "&cn=9999999&mb=0&mt=9999999&shkr1=03&shkr2=03&shkr3=03&shkr4=03&fw2="
+)
 
 # HTML crawler reads every new tmp link by default. Set SUUMO_HTML_LINK_LIMIT=1
 # when only one page should be fetched for a local smoke check.
-SUUMO_HTML_LINKS_FILE = "tmp/suumo_links.txt"
-SUUMO_HTML_LINK_LIMIT = 0
-SUUMO_SOURCE_ID = 1
-SUUMO_RUN_CREATED_BY = "schedule"
+SUUMO_HTML_LINKS_FILE = os.environ.get("SUUMO_HTML_LINKS_FILE", "tmp/suumo_links.txt")
+SUUMO_HTML_LINK_LIMIT = env_int("SUUMO_HTML_LINK_LIMIT", 0)
+SUUMO_SOURCE_ID = env_int("SUUMO_SOURCE_ID", 1, minimum=1)
+SUUMO_RUN_CREATED_BY = os.environ.get("SUUMO_RUN_CREATED_BY", "schedule")
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
@@ -79,6 +107,7 @@ SUUMO_RUN_CREATED_BY = "schedule"
 DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.RandomUserAgentMiddleware": 400,
     "crawler.middlewares.SuumoHtmlTaskClaimMiddleware": 410,
+    "crawler.vpn_accounting.VpnRequestAccounting": 950,
 }
 
 # Enable lifecycle notifications and summary collection. The extension becomes

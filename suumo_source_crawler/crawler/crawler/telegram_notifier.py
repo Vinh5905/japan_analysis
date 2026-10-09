@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import socket
+from html import escape, unescape
+from html.parser import HTMLParser
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Mapping
@@ -25,6 +27,7 @@ class TelegramConfig:
     bot_token: str = field(repr=False)
     chat_id: str
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    secrets: tuple[str, ...] = field(default=(), repr=False)
 
     @property
     def enabled(self) -> bool:
@@ -53,14 +56,15 @@ def load_telegram_config(
     return TelegramConfig(
         bot_token=str(values.get("TELEGRAM_BOT_TOKEN", "")).strip(),
         chat_id=str(values.get("TELEGRAM_CHAT_ID", "")).strip(),
+        secrets=tuple(str(value) for key, value in values.items()
+                      if value and re.search(r"(?i)(password|passwd|secret|token|api_key)$", key)),
     )
 
 
 def current_timestamp(environ: Mapping[str, str] | None = None) -> str:
-    """Return an ISO timestamp in the configured runtime timezone."""
+    """Return Telegram timestamps in Vietnam time, independent of host TZ."""
 
-    values = os.environ if environ is None else environ
-    timezone_name = str(values.get("TZ", "Asia/Ho_Chi_Minh")).strip()
+    timezone_name = "Asia/Ho_Chi_Minh"
     try:
         local_timezone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError:
@@ -75,23 +79,64 @@ def machine_name(environ: Mapping[str, str] | None = None) -> str:
     return str(values.get("TELEGRAM_HOSTNAME", "")).strip() or socket.gethostname()
 
 
-def sanitize_text(value: object, bot_token: str = "") -> str:
+def sanitize_text(value: object, bot_token: str = "", strip: bool = True) -> str:
     """Remove control characters and redact a bot token from notification text."""
 
-    text = str(value or "").replace("\x00", "").strip()
+    text = str(value if value is not None else "").replace("\x00", "")
+    if strip:
+        text = text.strip()
     if bot_token:
         text = text.replace(bot_token, "[REDACTED_TELEGRAM_TOKEN]")
     text = re.sub(r"/bot\d+:[A-Za-z0-9_-]+/", "/bot[REDACTED]/", text)
+    text = re.sub(r"\b\d{5,}:[A-Za-z0-9_-]{10,}\b", "[REDACTED_TOKEN]", text)
+    text = re.sub(r"(?i)(password|passwd|secret|token|api_key)(\s*[=:]\s*)[^\s,;]+", r"\1\2[REDACTED]", text)
+    text = re.sub(r"(://[^\s/:]+:)[^\s/@]+@", r"\1[REDACTED]@", text)
+    text = re.sub(r"[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     return text
+
+
+def prepare_html(message: str, config: TelegramConfig) -> str:
+    """Redact decoded text nodes, keeping generated tags and entities intact."""
+    class Redactor(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.parts = []
+
+        def handle_starttag(self, tag, attrs):
+            self.parts.append("<b>" if tag == "b" and not attrs else escape(self.get_starttag_text()))
+
+        def handle_endtag(self, tag):
+            self.parts.append("</b>" if tag == "b" else escape(f"</{tag}>"))
+
+        def handle_data(self, data):
+            # Replace known secrets before applying patterns so markup cannot be
+            # damaged by short secrets or by a credential containing < or &.
+            for secret in config.secrets:
+                data = data.replace(secret, "[REDACTED]")
+            self.parts.append(escape(sanitize_text(data, config.bot_token, strip=False)))
+
+    redactor = Redactor()
+    redactor.feed(message)
+    redactor.close()
+    return truncate_message("".join(redactor.parts))
+
+
+def message_size(message: str) -> int:
+    return len(message.encode("utf-16-le")) // 2
 
 
 def truncate_message(message: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> str:
     """Keep Telegram messages below the Bot API text limit."""
 
-    if len(message) <= limit:
+    if message_size(message) <= limit:
         return message
     suffix = "\n...[đã rút gọn]"
-    return f"{message[: limit - len(suffix)]}{suffix}"
+    # Never cut a tag/entity in HTML. Oversized external text becomes escaped
+    # plain text; messages built below already fit without losing formatting.
+    plain = unescape(re.sub(r"<[^>]*>", "", message))
+    while message_size(escape(plain) + suffix) > limit:
+        plain = plain[: max(0, len(plain) - max(1, (message_size(escape(plain) + suffix) - limit)))]
+    return escape(plain) + suffix
 
 
 def build_event_message(
@@ -99,19 +144,49 @@ def build_event_message(
     fields: Mapping[str, object],
     possible_causes: list[str] | None = None,
     bot_token: str = "",
+    secrets: tuple[str, ...] = (),
 ) -> str:
-    """Build a consistent plain-text lifecycle or failure message."""
-
-    lines = [f"[SUUMO] {sanitize_text(title, bot_token)}"]
-    for label, value in fields.items():
+    """Escape dynamic text before adding markup; bound each field before escape."""
+    upper = title.upper()
+    failed = any(word in upper for word in ("THẤT BẠI", "KHÔNG THỂ", "KHÔNG XÁC NHẬN"))
+    warning = any(word in upper for word in ("CẢNH BÁO", "CHƯA BẬT", "KHÔNG ỔN ĐỊNH"))
+    done = any(word in upper for word in ("HOÀN THÀNH", "ĐÃ BẬT", "ĐÃ TẮT"))
+    status = "🔴" if failed else "🟠" if warning else "🟢" if done else "🔵"
+    values = {"Giờ Việt Nam": current_timestamp(), **fields}
+    job = str(values.get("Job", values.get("Bước lỗi", "")))
+    step = "🔐 VPN" if "VPN" in upper else {"suumo_links": "🔎 Tìm links", "suumo_html": "📥 Tải HTML", "suumo_page": "🧩 Parse dữ liệu"}.get(job.replace("-", "_"), "")
+    run_id = os.environ.get("TELEGRAM_PIPELINE_RUN_ID", "")
+    if run_id:
+        values = {"Lượt chạy": run_id[:12], **values}
+    if os.environ.get("SUUMO_RUN_AREA"):
+        values = {"Khu vực": os.environ["SUUMO_RUN_AREA"], **values}
+    if os.environ.get("SUUMO_VPN_FILENAME"):
+        values = {"VPN": os.environ["SUUMO_VPN_FILENAME"], **values}
+    known_secrets = secrets + load_telegram_config().secrets
+    def clean(value, size):
+        text = sanitize_text(value, bot_token)
+        for secret in known_secrets:
+            text = text.replace(secret, "[REDACTED]")
+        return escape(text[:size])
+    lines = [f"{status} <b>SUUMO · {clean(title, 120)}</b>"]
+    if step:
+        lines.append(step)
+    lines.append("")
+    for label, value in values.items():
         if value is None or value == "":
             continue
-        lines.append(f"{label}: {sanitize_text(value, bot_token)}")
+        size = 240 if any(word in label.lower() for word in ("error", "lỗi", "lý do")) else 500
+        line = f"{clean(label, 60)}: {clean(value, size)}"
+        if message_size("\n".join(lines)) + message_size(line) > 3500:
+            lines.append("… Chi tiết trong journald.")
+            break
+        lines.append(line)
 
-    causes = [sanitize_text(cause, bot_token) for cause in possible_causes or [] if cause]
+    causes = [clean(cause, 180) for cause in (possible_causes or [])[:2] if cause]
     if causes:
-        lines.append("Khả năng cần kiểm tra:")
-        lines.extend(f"- {cause}" for cause in causes)
+        for cause in causes:
+            if message_size("\n".join(lines)) + message_size(cause) + 30 < 3900:
+                lines.append(f"💡 {cause}")
 
     return truncate_message("\n".join(lines))
 
@@ -188,7 +263,7 @@ class TelegramNotifier:
         return cls(load_telegram_config(environ))
 
     def send_message(self, message: str) -> TelegramSendResult:
-        """Send one plain-text message and convert all transport errors into a result."""
+        """Send generated HTML and convert transport errors into a fail-open result."""
 
         if not self.config.enabled:
             return TelegramSendResult(
@@ -203,7 +278,8 @@ class TelegramNotifier:
             payload = json.dumps(
                 {
                     "chat_id": self.config.chat_id,
-                    "text": truncate_message(sanitize_text(message, self.config.bot_token)),
+                    "text": prepare_html(message, self.config),
+                    "parse_mode": "HTML",
                 },
                 ensure_ascii=False,
             ).encode("utf-8")

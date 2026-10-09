@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,10 +57,10 @@ class SuumoHtmlSpider(scrapy.Spider):
         """Open DB resources and create the crawl_runs row for this spider run."""
 
         self.metadata_repository = CrawlerMetadataRepository.from_env()
-        crawl_run = self.metadata_repository.create_crawl_run(
-            source_id=self.source_id,
-            created_by=self.created_by,
-        )
+        configured_run = os.environ.get("SUUMO_RUN_ID")
+        if not configured_run:
+            raise RuntimeError("SUUMO_RUN_ID required: prepare one ward before HTML")
+        crawl_run = self.metadata_repository.fetch_crawl_run(int(configured_run), self.source_id)
         self.run_id = crawl_run.run_id
         self.run_created_at = crawl_run.created_at
         self.logger.info("Created crawl_run row with run_id=%s", self.run_id)

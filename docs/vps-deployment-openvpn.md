@@ -1,5 +1,13 @@
 # VPS Deployment And OpenVPN Runbook
 
+## Pool VPN hiện tại
+
+Release `20261009-vpn-03` dùng 23 cấu hình dưới `/opt/suumo-crawler/vpn_config`
+và PostgreSQL catalogue thay cho cấu hình cố định. `japan.conf` được sinh trước
+mỗi activation khi tunnel cũ đã tắt, giữ route SSH. Thêm file bằng
+`make -C suumo_source_crawler vpn-sync`; xem [runbook pool VPN](crawler-vpn-pool.md).
+Các phần thiết lập OpenVPN ban đầu bên dưới giữ để tham khảo hạ tầng.
+
 Tài liệu này mô tả quy trình từ lúc tạo SSH key để vào VPS, cài Docker, clone repo, chạy crawler release, rồi cấu hình OpenVPN theo cách B: VPN chạy trên host nhưng giữ SSH đi qua public gateway.
 
 Các ví dụ dùng placeholder:
@@ -166,21 +174,12 @@ cd /opt/suumo-crawler
 mkdir -p tmp
 ```
 
-Folder `/opt/suumo-crawler` là nơi đặt file release runtime. Code crawler thật vẫn nằm trong Docker image `kevinpham9257/suumo-crawler:<tag>`. Host chỉ cần thêm folder `suumo_source_crawler` để chạy script điều phối pipeline và gửi Telegram khi một lệnh Docker lỗi trước lúc container crawler khởi động.
+Folder `/opt/suumo-crawler` là nơi đặt file release runtime. Code crawler thật nằm trong Docker image `kevinpham9257/suumo-crawler:<tag>`. Host runtime được đồng bộ đủ file bằng `make release-deploy`, gồm runner, VPN preflight, shared lock, Telegram helper và systemd templates. Xem [quy trình deploy crawler](crawler-deployment.md).
 
-Từ máy local, copy file release lên VPS:
+Từ máy local, copy mẫu cấu hình lên VPS; chưa cần copy từng file Python:
 
 ```bash
-scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml .env.release.example VPS_USER@VPS_HOST:/opt/suumo-crawler/
-ssh -i ~/.ssh/suumo_vps -p VPS_SSH_PORT VPS_USER@VPS_HOST \
-  'mkdir -p /opt/suumo-crawler/suumo_source_crawler/scripts /opt/suumo-crawler/suumo_source_crawler/crawler/crawler'
-scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT \
-  suumo_source_crawler/scripts/run_release_pipeline.py \
-  VPS_USER@VPS_HOST:/opt/suumo-crawler/suumo_source_crawler/scripts/
-scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT \
-  suumo_source_crawler/crawler/crawler/telegram_notifier.py \
-  suumo_source_crawler/crawler/crawler/__init__.py \
-  VPS_USER@VPS_HOST:/opt/suumo-crawler/suumo_source_crawler/crawler/crawler/
+scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT .env.release.example VPS_USER@VPS_HOST:/opt/suumo-crawler/
 ```
 
 Nếu bạn đã có file `.env` riêng trên local, copy thẳng `.env` thay vì `.env.release.example`.
@@ -204,7 +203,7 @@ TELEGRAM_CHAT_ID=chat_id_của_bạn
 
 Không commit file `.env`. Nếu token từng được gửi qua chat hoặc commit vào Git, revoke token cũ và tạo token mới trước khi chạy production.
 
-Test riêng kết nối Telegram, không cần khởi động PostgreSQL hoặc MinIO:
+Sau khi đồng bộ runtime/pull image ở phần 9, test riêng kết nối Telegram, không cần khởi động PostgreSQL hoặc MinIO:
 
 ```bash
 docker compose --env-file .env -f docker-compose.release.yml run --rm --no-deps telegram-test
@@ -216,7 +215,7 @@ Sửa tối thiểu:
 
 ```env
 SUUMO_CRAWLER_IMAGE=kevinpham9257/suumo-crawler
-SUUMO_CRAWLER_TAG=latest
+SUUMO_CRAWLER_TAG=20261009-01
 
 POSTGRES_PASSWORD=change_this_postgres_password
 MINIO_ROOT_PASSWORD=change_this_minio_password
@@ -238,7 +237,7 @@ Lệnh này login Docker Hub để có quyền push image.
 Build và push multi-platform:
 
 ```bash
-make docker-build-push-release tag=latest
+make docker-build-push-release tag=20261009-01
 ```
 
 Lệnh này dùng Docker Buildx để build image cho cả:
@@ -253,7 +252,7 @@ VPS thường là `linux/amd64`, còn Mac Apple Silicon là `linux/arm64`. Nếu
 Kiểm tra manifest trên Docker Hub:
 
 ```bash
-make docker-inspect-release tag=latest
+make docker-inspect-release tag=20261009-01
 ```
 
 Output cần có cả:
@@ -264,6 +263,15 @@ Platform: linux/arm64
 ```
 
 ## 9. Pull image và start release runtime trên VPS
+
+Sau khi đã tạo `.env` trên VPS và publish image, chạy từ root repo local để đồng bộ đủ host files và pull image. Lệnh mặc định chỉ xem kế hoạch; `--apply` mới triển khai. Alias `suumo-vps` phải cấu hình user quản trị trong SSH config ở phần 3.
+
+```bash
+make release-deploy host=suumo-vps tag=20261009-01
+make release-deploy host=suumo-vps tag=20261009-01 opts="--apply"
+```
+
+Installer tạo service và timer nhưng không tự enable timer hoặc chạy bootstrap/crawler. Tiếp tục bootstrap ở phần dưới sau khi infra đã lên. VPS cần Python >= 3.10; nếu thiếu, cài `python3` trước khi deploy. Các lệnh Docker thủ công dưới đây vẫn dùng được để kiểm tra và vận hành.
 
 Chạy trên VPS trong `/opt/suumo-crawler`:
 
@@ -844,11 +852,7 @@ Nếu mọi thứ ổn, hủy rollback:
 systemctl stop openvpn-ssh-rollback.timer openvpn-ssh-rollback.service 2>/dev/null || true
 ```
 
-Sau đó mới bật auto-start khi VPS reboot:
-
-```bash
-systemctl enable openvpn-client@japan
-```
+Với pipeline hiện tại, không cần enable OpenVPN tự chạy riêng khi VPS reboot: unit crawler sẽ yêu cầu bật VPN ở đầu mỗi lượt và xác nhận đóng VPN ở cuối lượt. Chỉ enable timer crawler sau khi kiểm tra hoàn tất. Thay đổi này không tự disable OpenVPN nếu trước đó đã enable; cấu hình autostart hiện có vẫn cần kiểm tra lúc triển khai thực tế.
 
 Không dùng `enable --now` trong lần đầu, vì `--now` vừa enable vừa start ngay, dễ tự khóa SSH nếu route chưa đúng.
 
@@ -885,12 +889,15 @@ docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-tool
 
 Nếu output là IP Nhật/VPN, crawler outbound đang đi qua VPN.
 
+Ưu tiên chạy đủ lượt bằng `systemctl start suumo-crawler-pipeline.service` hoặc host runner ở phần 18 để tự preflight và đóng/xác nhận VPN cuối lượt. Các lệnh Compose đơn lẻ bên dưới không tự đóng VPN; nếu dùng để vận hành thủ công, chạy host cleanup sau khi các lệnh đã kết thúc.
+
 Chạy crawler:
 
 ```bash
 docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-links
 docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-html
 docker compose --env-file .env -f docker-compose.release.yml run --rm suumo-page
+python3 suumo_source_crawler/scripts/stop_openvpn.py --compose-file docker-compose.release.yml --env-file .env
 ```
 
 ## 18. Tự động chạy pipeline bằng systemd timer
@@ -909,10 +916,10 @@ python3 suumo_source_crawler/scripts/run_release_pipeline.py \
 Runner chạy đủ thứ tự:
 
 ```text
-bootstrap -> suumo_links -> suumo_html -> suumo_page
+VPN preflight -> bootstrap -> suumo_links -> suumo_html -> suumo_page -> VPN shutdown + verification
 ```
 
-Nếu một bước lỗi, runner dừng, giữ nguyên exit code, gửi Telegram kèm bước lỗi và phần cuối log, rồi systemd đánh dấu service failed. Runner dùng `--pull never` để lịch chạy chỉ dùng image đã pull sẵn và không phụ thuộc Docker Hub.
+Nếu một bước lỗi, runner dừng các bước tiếp theo, giữ exit code lỗi và gửi Telegram. Cleanup vẫn chạy để dừng task còn sót, đóng VPN và xác nhận đã đóng; không xác nhận được thì lượt chạy cũng failed. Runner dùng `--pull never` để lịch chạy chỉ dùng image đã pull sẵn và không phụ thuộc Docker Hub. Runner thủ công tự quản lý VPN; systemd truyền `--vpn-managed-by-systemd` vì dùng preflight/cleanup hooks riêng.
 
 Tạo service:
 
@@ -926,16 +933,18 @@ Dán nội dung:
 [Unit]
 Description=Run SUUMO crawler release pipeline
 Requires=docker.service
-After=docker.service network-online.target openvpn-client@japan.service
-Wants=network-online.target openvpn-client@japan.service
+After=docker.service network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/suumo-crawler
 Environment=PYTHONUNBUFFERED=1
 TimeoutStartSec=infinity
+TimeoutStopSec=10min
 ExecStartPre=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/ensure_openvpn.py --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0 --restart-attempts 3 --checks-per-attempt 120 --required-consecutive-checks 3 --check-interval-seconds 2
-ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env
+ExecStart=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/run_release_pipeline.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env --vpn-managed-by-systemd
+ExecStopPost=/usr/bin/python3 /opt/suumo-crawler/suumo_source_crawler/scripts/stop_openvpn.py --compose-file /opt/suumo-crawler/docker-compose.release.yml --env-file /opt/suumo-crawler/.env --service openvpn-client@japan --interface tun0
 ```
 
 Giải thích:
@@ -945,18 +954,20 @@ Giải thích:
 - `ExecStart=...run_release_pipeline.py`: gửi pipeline start, đảm bảo PostgreSQL/MinIO và schema sẵn sàng, sau đó chạy `suumo-links`, `suumo-html`, `suumo-page` tuần tự.
 - `ExecStartPre=...ensure_openvpn.py`: gửi Telegram bắt đầu kiểm tra VPN, thông báo VPN đã bật/chưa bật, tự bật lại tối đa 3 lần và chỉ trả thành công khi tunnel khỏe. Nếu service đang `active`/`activating`, script cho OpenVPN tối đa 4 phút để tự reconnect trước khi ép restart. Mỗi lần có tối đa 120 lượt kiểm tra, cách nhau 2 giây; phải đạt 3 lượt khỏe liên tiếp mới cho crawler chạy.
 - `TimeoutStartSec=infinity`: crawler có thể chạy nhiều giờ; giới hạn 20 phút trước đây khiến systemd gửi SIGTERM lúc job HTML đang chạy. Preflight VPN vẫn giới hạn bởi số lượt kiểm tra và tối đa 3 lần restart.
+- `ExecStopPost=...stop_openvpn.py`: cleanup cuối lượt, chạy cả khi preflight/crawler thất bại hoặc service bị stop. Dừng/xác nhận container pipeline còn sót trước khi tắt VPN, rồi yêu cầu stop OpenVPN tối đa 3 lần. Mỗi lần có tối đa 30 kiểm tra cách nhau 2 giây, cần 3 kiểm tra liên tiếp xác nhận service không còn process, tun0 absent/DOWN và không còn route IPv4/IPv6 qua tunnel. Không kiểm tra được thì báo cleanup failed; không giả định lệnh stop thành công nghĩa là VPN đã tắt.
+- `TimeoutStopSec=10min`: systemd chờ cleanup có giới hạn. Cleanup timeout/lỗi làm lượt chạy failed. Chỉ có thông báo Telegram VPN đã tắt sau khi xác nhận đủ điều kiện.
 - Một lượt chỉ được coi là khỏe khi `openvpn-client@japan` là `active`, interface `tun0` đang `UP`, và cả route `0.0.0.0/1` lẫn `128.0.0.0/1` đều đi qua `tun0`.
 - Nếu VPN vẫn không khỏe sau số lần retry, `ExecStartPre` trả exit code khác 0; systemd đánh dấu pipeline failed và không chạy crawler bằng IP public của VPS.
 - `--env-file /opt/suumo-crawler/.env` cho phép preflight dùng cùng `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID` với pipeline. Telegram lỗi hoặc thiếu biến không làm preflight crash; nhưng VPN không khỏe luôn chặn crawler.
 - Mỗi spider gửi start/summary riêng. Pipeline gửi summary tổng hoặc failure của bước đầu tiên bị lỗi.
 - `Requires=docker.service`: nếu Docker không chạy thì service không nên chạy.
-- `Wants/After=openvpn-client@japan.service`: yêu cầu systemd thử start OpenVPN trước, sau đó preflight chịu trách nhiệm xác nhận tunnel thật sự khỏe.
+- Preflight tự start/restart OpenVPN và xác nhận tunnel khỏe; unit không còn đặt `Wants/After` tới VPN. Vòng đời bật/tắt được quản lý bởi các script, tránh ràng buộc thứ tự dừng giữa pipeline đang cleanup và service VPN cần được stop.
 
 Không đặt `docker compose pull` trong scheduled service. Nếu OpenVPN đang bật, VPS có thể không kết nối được Docker Hub registry và làm job fail trước khi crawl. Image nên được pull thủ công lúc deploy/update; runner dùng `--pull never` để job định kỳ chỉ chạy image local.
 
 Preflight không tự hủy `openvpn-ssh-rollback.timer`. Rollback bảo vệ SSH là cơ chế dành cho lần test thủ công và chỉ được hủy sau khi người vận hành xác nhận route tới IP SSH hiện tại vẫn đi qua public gateway. Systemd không biết IP Wi-Fi tương lai của người vận hành, nên tự hủy rollback chỉ dựa trên trạng thái `tun0` là không an toàn.
 
-Sau khi đồng bộ repository mới lên `/opt/suumo-crawler`, cài lại unit đã version-control:
+`make release-deploy ... opts="--apply"` tự cài lại unit và reload systemd. Nếu đồng bộ thủ công, phải copy đủ cả runner, preflight, `scripts/stop_openvpn.py`, `scripts/runtime_lock.py`, `scripts/telegram_state.py`, package `__init__.py` và Telegram helper. Sau đó cài unit đã version-control:
 
 ```bash
 install -m 0644 \
@@ -1129,43 +1140,40 @@ Rồi SSH lại từ máy local.
 
 ## 20. Cập nhật code/image sau này
 
-Trên máy local:
+Quy trình chính nằm ở [Deploy crawler SUUMO](crawler-deployment.md). Trên máy local, chọn tag mới và build image/host bundle từ cùng phiên bản source:
 
 ```bash
-git pull
-make docker-login
-make docker-build-push-release tag=latest
-make docker-inspect-release tag=latest
+make docker-build-push-release tag=20261009-02
+make release-deploy host=suumo-vps tag=20261009-02
+make release-deploy host=suumo-vps tag=20261009-02 opts="--apply"
 ```
 
-Trên VPS:
+Lệnh mặc định chỉ in kế hoạch tại local. Với `--apply`, lệnh đồng bộ đầy đủ host runtime, pull image, cập nhật tag trong `.env`, cài service, reload systemd và áp dụng PostgreSQL/MinIO config. `.env` còn lại, tmp, VPN config và named volumes được giữ. Nếu crawler đang chạy, lệnh từ chối deploy; lịch timer hiện có không bị thay trừ khi truyền `--update-timer`.
+
+Installer không chạy crawler, bootstrap hoặc migrations. Runner định kỳ vẫn dùng `--pull never`; container one-shot ở lần chạy sau dùng tag đã pull.
+
+Nếu chỉ sửa host script, Compose hoặc service, có thể deploy lại với tag image hiện có. Sửa crawler/Telegram helper/dependencies/SQL thì build tag mới. Nếu sửa lịch trong file timer của repo:
 
 ```bash
-cd /opt/suumo-crawler
+make release-deploy host=suumo-vps tag=20261009-02 opts="--apply --update-timer"
+```
+
+Nếu VPN làm Docker Hub không truy cập được, installer giữ release cũ và khôi phục trạng thái timer. Installer không tự đổi VPN/route SSH. Chỉ khi crawler đã dừng và route SSH được kiểm tra theo phần 14–16, người vận hành có thể tạm tắt VPN để pull qua network public, rồi bật lại và xác nhận VPN khỏe trước khi cho lịch chạy tiếp:
+
+```bash
 systemctl stop openvpn-client@japan
-docker compose --env-file .env -f docker-compose.release.yml --profile tasks --profile tools pull
+# Chạy lại release-deploy --apply từ local khi network đã sẵn sàng.
 systemctl start openvpn-client@japan
 ```
 
-`systemctl stop openvpn-client@japan` tạm tắt VPN để Docker Hub pull ổn định qua network public của VPS. Sau khi pull xong, `systemctl start openvpn-client@japan` bật lại VPN để crawler outbound đi qua Nhật.
-
-Lệnh `pull` lấy Docker image mới. Nếu chỉ sửa Python crawler code hoặc Scrapy settings trong image, lần chạy one-shot tiếp theo như `suumo-html` sẽ dùng image mới đã pull.
-
-Nếu `docker-compose.release.yml` thay đổi trong GitHub, copy file mới từ máy local lên VPS:
-
-```bash
-scp -i ~/.ssh/suumo_vps -P VPS_SSH_PORT docker-compose.release.yml VPS_USER@VPS_HOST:/opt/suumo-crawler/
-```
-
-Nếu thay đổi compose config cho service chạy nền, ví dụ `mem_limit`, `cpus`, `pids_limit`, recreate PostgreSQL và MinIO:
-
-```bash
-cd /opt/suumo-crawler
-docker compose --env-file .env -f docker-compose.release.yml up -d --force-recreate postgres minio
-```
-
-Không cần chạy `crawler-init` cho mỗi lần update. Chỉ chạy lại khi setup VPS lần đầu, DB/MinIO volume mới hoặc rỗng, vừa xóa volume, hoặc vừa thay đổi logic bootstrap/schema init:
+Setup VPS lần đầu hoặc khi DB/MinIO mới cần bootstrap:
 
 ```bash
 docker compose --env-file .env -f docker-compose.release.yml run --rm crawler-init
 ```
+
+Đối với schema đã tồn tại, cập nhật bằng migration tường minh. Thay init SQL và chạy `crawler-init` mặc định không tự nâng cấp schema. Không dùng `--force-db-reset` hoặc xóa volume để cập nhật code.
+
+## Bot Telegram điều khiển crawler (đã deploy 2026-10-09)
+
+Menu `/run_crawl` (xác nhận 2 phút), `/status`, `/schedule`, `/history`, `/total` và các quy tắc nguồn dữ liệu nằm trong [runbook Telegram](telegram-crawler-control.md). Bot host mặc định tắt (`TELEGRAM_CONTROL_ENABLED=false`); deploy có `--enable-telegram-bot` mới kích hoạt bot mới. Cần image tag mới cùng host bundle; bundle gồm `telegram_control.py`, `telegram_state.py` và `suumo-crawler-telegram.service`. Giữ SQLite trong `state/` khi cập nhật. Đã deploy release `20261009-telegram-01` và bật bot trên VPS; menu và các lệnh xem đã kiểm chứng bằng code host, chưa chạy thử crawler/cleanup VPN thật. Xem [biên bản release](crawler-release-20261009-telegram-01.md).
