@@ -5,7 +5,23 @@
 
 Dự án này là nền tảng local cho Data Engineer phát triển nhiều crawler/pipeline. PostgreSQL và MinIO nằm ở root để dùng chung, còn Python runtime của từng crawler nằm trong folder crawler tương ứng.
 
-## Trạng thái VPS mới nhất — 2026-10-09
+## Trạng thái VPS mới nhất — 2026-10-10
+
+### Đã deploy retry Telegram — 2026-10-10 08:06 +07
+
+Commit code `74158d0` đã push origin/main cùng `d9814ce`. Image/bundle build
+từ Git archive của commit này, loại phần building/parser/dbt chưa commit và
+guides. Release **20261010-telegram-retry-01**, digest
+`sha256:20a3b6dd29d6ef68067fab47a0ac355e65edcb43e489becec807c353c82b19c7`.
+25 host checksums và notifier trong image khớp; QA retry trong image network
+none với HTTP mock đạt. Bot/timer active, menu private owner 9 lệnh đúng,
+dispatcher success; pipeline idle, VPN không chạy, host VPN vẫn masked.
+Postgres/MinIO healthy, env giữ ngoài tag, không migration/bootstrap/crawl thật.
+41 run/74.112 URL, 24 ward/23 VPN. Run41 Fukushima completed và cleanup
+confirmed lúc 07:45:42; queue rỗng, ngày hiện tại 1 run/4.505 URL, cooldown
+vẫn chạy bù sớm nhất 08:45:43 +07. Backup runtime/config private
+`.releases/20261010-telegram-retry-01-1a1dd135`.
+Xem [biên bản release](crawler-release-20261010-telegram-retry-01.md).
 
 ### Retry Telegram — chỉ sửa local 2026-10-10
 

@@ -22,5 +22,6 @@ Timeout sau khi server đã nhận tin có thể tạo bản gửi trùng khi re
 sendMessage không cung cấp khóa chống gửi trùng. Chưa có outbox phát lại qua restart.
 
 Phạm vi là thông báo VPN/job/pipeline; các callback/menu của bot vẫn giữ logic
-hiện có. Thay đổi này chưa deploy. Khi phát hành cần image mới và host bundle
-cùng source, xem [lệnh deploy một bước](crawler-deployment.md).
+hiện có. Đã deploy `20261010-telegram-retry-01` từ commit `74158d0` với image
+mới và host bundle cùng source; xem [biên bản release](crawler-release-20261010-telegram-retry-01.md)
+và [lệnh deploy một bước](crawler-deployment.md).
