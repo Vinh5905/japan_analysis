@@ -131,6 +131,12 @@ release-deploy: ## Local-only deployment plan; pass host=<SSH alias> tag=<versio
 	@test -n "$(DEPLOY_HOST)" || { printf 'Usage: make release-deploy host=suumo-vps tag=<version> [opts="--apply"]\n'; exit 1; }
 	python3 suumo_source_crawler/scripts/deploy_release.py deploy --tag "$(tag)" --host "$(DEPLOY_HOST)" --target "$(DEPLOY_TARGET)" $(opts)
 
+.PHONY: release-publish-deploy
+release-publish-deploy: ## Build/push image then deploy host bundle in order; requires host=<alias> tag=<new-version>
+	$(MAKE) release-deploy opts=""
+	$(MAKE) docker-build-push-release
+	$(MAKE) release-deploy opts="--apply $(opts)"
+
 .PHONY: release-pull
 release-pull: ## Pull release images
 	$(RELEASE_COMPOSE_CMD) --profile tasks --profile tools pull

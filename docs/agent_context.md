@@ -7,6 +7,40 @@ Dự án này là nền tảng local cho Data Engineer phát triển nhiều cra
 
 ## Trạng thái VPS mới nhất — 2026-10-09
 
+### Retry Telegram — chỉ sửa local 2026-10-10
+
+Đã thêm một lần gửi đầu + tối đa ba retry trong TelegramNotifier dùng chung
+cho lifecycle VPN/job/pipeline. Lỗi mạng/TLS/timeout và 5xx chờ 2/4/8 giây;
+thành công dừng ngay, lỗi quyền/token/markup không retry. HTTP/API 429 tôn trọng
+retry_after, không chờ quá 30 giây hoặc thử lại sớm. Hết retry ghi warning,
+crawler tiếp tục; không có outbox phục hồi tin qua restart.
+
+Root Makefile có `make release-publish-deploy host=thuevpsgiare tag=20261010-telegram-retry-01`:
+validate local, build/push image, rồi deploy host bundle tuần tự; build lỗi
+không deploy. Installer vẫn từ chối khi crawler/VPN/cleanup đang bận.
+Lệnh dùng working tree, nên kiểm tra các thay đổi crawler building/parser
+chưa commit trước khi phát hành. **Chưa build/push/deploy hoặc gửi Telegram thật.**
+
+Kiểm tra offline: 177 test crawler được chạy, 164 đạt và 13 opt-in dependency/DB
+skip; gồm retry TLS hook HTML, backoff, hết lượt, lỗi API, che token và orchestration
+make bằng shim (build lỗi không deploy). Full discovery còn test building parser
+thuộc thay đổi khác không import được vì Python local thiếu Scrapy; test đó được
+loại khỏi lượt 177 trên, không sửa lẫn phần building. `git diff --check` sạch.
+Xem [retry](telegram-crawler-control.md) và [deploy](crawler-deployment.md).
+
+### Chẩn đoán mất thông báo HTML — 2026-10-10 00:37 +07
+
+Run41 schedule Fukushima dùng `vpngate_219.100.37.209_tcp_443.ovpn`.
+Links xong 00:19:09 với 4.505 URL mới; runner sang suumo-html 00:19:17,
+spider mở 00:19:26. Tin JOB BẮT ĐẦU được gọi nhưng log 00:19:35 báo
+`URLError: <urlopen error _ssl.c:983: The handshake operation timed out>`.
+Notifier timeout 5s, chỉ thử một lần/fail-open; exception không dừng crawler
+và tin mất không được phát lại. HTML vẫn HTTP200/persist MinIO bình thường,
+container HTML và VPN healthy lúc 00:36. Đây là lỗi vận chuyển thông báo qua
+VPN, không phải thiếu hook hoặc HTML chưa chạy; chưa sửa/deploy trong lần
+chẩn đoán này. Khi cải thiện nên gửi lifecycle từ host hoặc outbox host/retry
+để không phụ thuộc đường VPN; không restart/deploy pipeline đang chạy.
+
 **21:25 +07 — lượt Telegram đầu tiên đang chạy.** Người dùng xác nhận Miyakojima
 lúc 21:16, nhưng dispatcher ValueError trước tạo run do SUUMO_SEARCH_URL trống:
 ward_url thiếu fallback mặc định dù spider/settings hỗ trợ cấu hình này. Đã sửa

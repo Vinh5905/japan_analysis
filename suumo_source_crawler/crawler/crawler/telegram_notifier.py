@@ -5,12 +5,13 @@ import logging
 import os
 import re
 import socket
+import time
 from html import escape, unescape
 from html.parser import HTMLParser
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Mapping
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,6 +19,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 LOGGER = logging.getLogger("crawler.telegram")
 TELEGRAM_MESSAGE_LIMIT = 4096
 DEFAULT_TIMEOUT_SECONDS = 5.0
+MAX_SEND_RETRIES = 3
+MAX_RATE_LIMIT_WAIT_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -263,7 +266,7 @@ class TelegramNotifier:
         return cls(load_telegram_config(environ))
 
     def send_message(self, message: str) -> TelegramSendResult:
-        """Send generated HTML and convert transport errors into a fail-open result."""
+        """Retry transient failures three times, stopping immediately after delivery."""
 
         if not self.config.enabled:
             return TelegramSendResult(
@@ -273,6 +276,40 @@ class TelegramNotifier:
                 error_message="TELEGRAM_BOT_TOKEN hoặc TELEGRAM_CHAT_ID chưa được cấu hình",
             )
 
+        attempts = 1 + MAX_SEND_RETRIES
+        for attempt in range(1, attempts + 1):
+            result, retry_after = self._send_once(message)
+            if result.sent:
+                if attempt > 1:
+                    LOGGER.info("Telegram notification delivered on attempt %s/%s", attempt, attempts)
+                return result
+            if retry_after is None or attempt == attempts:
+                LOGGER.warning("Telegram notification not delivered after %s/%s attempts (%s); crawler continues",
+                               attempt, attempts, result.error_type)
+                return result
+            # Give TLS/DNS a chance to recover; respect Telegram's rate-limit wait.
+            delay = max(2 ** attempt, retry_after)
+            LOGGER.warning("Telegram notification attempt %s/%s failed (%s); retrying in %s seconds",
+                           attempt, attempts, result.error_type, delay)
+            time.sleep(delay)
+        return result
+
+    @staticmethod
+    def _retry_delay(status_code: int, body: Mapping[str, object]) -> float | None:
+        """Retry server/rate-limit failures without waiting indefinitely or retrying too early."""
+        if status_code == 429:
+            parameters = body.get('parameters')
+            value = parameters.get('retry_after', 0) if isinstance(parameters, dict) else 0
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return None
+            if value > MAX_RATE_LIMIT_WAIT_SECONDS:
+                LOGGER.warning("Telegram retry_after exceeds the bounded notification wait; no early retry")
+                return None
+            return float(value)
+        return 0.0 if 500 <= status_code <= 599 else None
+
+    def _send_once(self, message: str) -> tuple[TelegramSendResult, float | None]:
+        """Return one sanitized delivery result and a wait hint for transient failures."""
         try:
             url = f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
             payload = json.dumps(
@@ -299,29 +336,41 @@ class TelegramNotifier:
                     self.config.bot_token,
                 )
                 LOGGER.warning("Telegram notification was rejected: %s", description)
+                error_code = parsed_body.get('error_code', status_code)
+                if not isinstance(error_code, int):
+                    error_code = status_code
                 return TelegramSendResult(
                     configured=True,
                     sent=False,
-                    status_code=status_code,
+                    status_code=error_code,
                     error_type="TelegramApiError",
                     error_message=description,
-                )
+                ), self._retry_delay(error_code, parsed_body)
 
             return TelegramSendResult(
                 configured=True,
                 sent=True,
                 status_code=status_code,
-            )
+            ), None
         except HTTPError as exc:
             error_message = sanitize_text(exc.reason, self.config.bot_token)
             LOGGER.warning("Telegram HTTP request failed: HTTP %s", exc.code)
+            body = {}
+            if exc.code == 429:
+                try:
+                    body = json.loads(exc.read().decode('utf-8'))
+                    if not isinstance(body, dict):
+                        body = {}
+                except (OSError, ValueError):
+                    pass
+            exc.close()
             return TelegramSendResult(
                 configured=True,
                 sent=False,
                 status_code=exc.code,
                 error_type=type(exc).__name__,
                 error_message=error_message,
-            )
+            ), self._retry_delay(exc.code, body)
         except Exception as exc:  # noqa: BLE001 - notifications must never stop the crawler.
             error_message = sanitize_text(exc, self.config.bot_token)
             LOGGER.warning(
@@ -334,4 +383,4 @@ class TelegramNotifier:
                 sent=False,
                 error_type=type(exc).__name__,
                 error_message=error_message,
-            )
+            ), 0.0 if isinstance(exc, (URLError, OSError, json.JSONDecodeError)) else None

@@ -18,6 +18,21 @@ sau đó bằng `make -C suumo_source_crawler vpn-sync`; không chứa keys tron
 
 Chạy từ root repository. Chọn một tag mới cho mỗi lần phát hành, ví dụ `20261009-01` hoặc commit SHA. Image và host bundle phải được tạo từ cùng một phiên bản source. Nếu thay đổi source sau khi build, build lại với tag mới; không ghi đè tag đã phát hành.
 
+Một lệnh build/push image đa kiến trúc rồi deploy host bundle theo thứ tự:
+
+```bash
+make release-publish-deploy host=thuevpsgiare tag=20261010-telegram-retry-01
+```
+
+Lệnh này thực sự publish/deploy; trước build sẽ validate host/tag bằng dry-run
+local, build lỗi thì không deploy. Cần Docker chạy và đã login Docker Hub.
+Installer từ chối khi crawler/VPN/cleanup đang chạy; không tự hủy lượt hiện tại
+hoặc đợi đến khi rảnh. Nếu image đã build/push thành công nhưng VPS còn bận,
+chạy lại riêng `make release-deploy host=thuevpsgiare tag=<cùng-tag> opts="--apply"`
+sau cleanup. Source build là working tree hiện tại, gồm cả thay đổi crawler
+chưa commit; kiểm tra các thay đổi khác trước khi phát hành.
+Backend Docker/lịch/queue hiện có được giữ, không cần cờ migration.
+
 ```bash
 # Build/push image từ local khi đã sẵn sàng publish.
 make docker-build-push-release tag=20261009-01
