@@ -1,5 +1,7 @@
 # Bổ sung tọa độ địa chỉ SUUMO
 
+**Legacy:** DAG hiện ngừng GSI. Tọa độ output được lấy từ dim_building; xem [building locations](suumo-building-locations.md). Notebook/cache chōme được giữ để tra cứu, không fallback cho building.
+
 ## Mức dữ liệu và vị trí lưu
 
 `notebook/03_geocode_addresses.ipynb` đọc CSV current của notebook 02, chạy GSI AddressSearch cho từng địa chỉ chōme duy nhất, rồi ghép tọa độ cho listing bằng merge `many_to_one`. Các hàm nằm trực tiếp trong cell để đọc được cách chuẩn hóa địa chỉ, encode URL, kiểm tra JSON và chọn điểm.
@@ -79,7 +81,6 @@ Tọa độ và metadata ở `dim_geography`. `fct_rental_price_observation` ch�
 Python tests dùng fixture HTTP: normalization, chọn kết quả, thứ tự kinh/vĩ độ, malformed/mơ hồ, retry/rate limit, lịch cache, force giữ điểm cũ và parity notebook. dbt kiểm tra query Python/SQL bằng scenarios, contract điểm, uniqueness/grain và unit test join giữ geography thiếu cache. Test Cosmos kiểm tra đầy đủ coverage/dependency, enrichment gate, cycle, selection và lỗi.
 
 `pipeline/tests/verify_geocode_warehouse.py --capture` lưu fingerprint các cột nghiệp vụ trước khi bổ sung; chạy lại không có `--capture` so sánh cùng tập cột, bao gồm fact, dim listing, geography cũ, history/latest và raw. Baseline phải được capture trước lần build đầu tiên; sau đó không capture lại để tránh che mất regression.
-
 
 Acceptance DAG local (scheduler tạm dừng) bằng `pipeline/tests/integration_geocoding.py --cache-miss --log-file <path>`: tạm bỏ một cache row đã sao lưu để mô phỏng query chưa có cache; DAG `dbt_only` nhánh geography tự gọi GSI, 1 lookup/1 matched và 86 cache hits, upstream ngoài nhánh không rebuild. Nếu test thất bại row được phục hồi. Chạy lại không có `--cache-miss` kiểm tra 87 cache hits/0 lookup; `--executor` dùng LocalExecutor hiện tại. Không thêm record giả vào nguồn listing. Cần capture business baseline trước đợt build đầu tiên và dừng scheduler khi chạy QA.
 

@@ -82,3 +82,15 @@ SQL
 psql -h "${WAREHOUSE_POSTGRES_HOST}" -p "${WAREHOUSE_POSTGRES_PORT}" \
     -U "${PIPELINE_POSTGRES_USER}" -d "${WAREHOUSE_DB}" \
     -v ON_ERROR_STOP=1 -f /scripts/suumo_address_geocodes.sql
+
+psql -h "${WAREHOUSE_POSTGRES_HOST}" -p "${WAREHOUSE_POSTGRES_PORT}" \
+    -U "${PIPELINE_POSTGRES_USER}" -d "${WAREHOUSE_DB}" \
+    -v ON_ERROR_STOP=1 -f /scripts/suumo_building_name_backfill.sql
+
+psql -h "${WAREHOUSE_POSTGRES_HOST}" -p "${WAREHOUSE_POSTGRES_PORT}" \
+    -U "${PIPELINE_POSTGRES_USER}" -d "${WAREHOUSE_DB}" \
+    -v ON_ERROR_STOP=1 -f /scripts/suumo_building_locations.sql
+
+psql -h "${WAREHOUSE_POSTGRES_HOST}" -p "${WAREHOUSE_POSTGRES_PORT}" \
+    -U "${PIPELINE_POSTGRES_USER}" -d "${WAREHOUSE_DB}" \
+    -v ON_ERROR_STOP=1 -f /scripts/mlit_zoning.sql

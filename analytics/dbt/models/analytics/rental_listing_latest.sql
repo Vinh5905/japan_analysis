@@ -1,5 +1,11 @@
-{{ config(indexes=[{'columns': ['task_id'], 'unique': true},
-                   {'columns': ['source_id', 'suumo_property_code'], 'unique': true}]) }}
+{{
+    config(
+        indexes=[
+            {"columns": ["task_id"], "unique": true},
+            {"columns": ["source_id", "suumo_property_code"], "unique": true},
+        ]
+    )
+}}
 
 -- BI-ready detail population. "Latest" means latest observed by this
 -- warehouse; it does not assert that the listing is still active on SUUMO.
@@ -34,15 +40,15 @@ select
     g.locality,
     g.chome,
 
-    l.building_type,
-    l.structure,
+    b.building_type,
+    b.structure,
     l.direction,
-    l.building_age_years,
-    l.building_age_is_lower_bound,
-    l.built_at,
-    l.built_at_precision,
-    l.building_total_floors,
-    l.total_units_count,
+    o.building_age_years,
+    o.building_age_is_lower_bound,
+    b.built_at,
+    b.built_at_precision,
+    b.building_total_floors,
+    b.total_units_count,
     l.floor_min,
     l.floor_max,
     l.floor_number,
@@ -84,14 +90,30 @@ select
     q.layout_detail_parse_status,
     q.station_access_parse_status,
 
-    g.latitude,
-    g.longitude,
-    g.coordinate_level,
-    g.geocode_status,
-    g.geocode_provider,
-    g.geocode_matched_address,
-    g.geocoded_at
-from {{ ref('rental_prices_latest_known') }} o
-join {{ ref('dim_rental_listing') }} l using (listing_version_key)
-join {{ ref('dim_geography') }} g using (geography_key)
-join {{ ref('dim_observation_quality') }} q using (observation_quality_key)
+    b.latitude,
+    b.longitude,
+    b.coordinate_level,
+    b.geocode_status,
+    b.geocode_provider,
+    b.geocode_matched_address,
+    b.geocoded_at,
+    o.building_key,
+    o.building_version_key,
+    o.building_name,
+    o.building_identity_status,
+    o.building_attributes_conflict,
+    l.room_number,
+    b.building_full_address_raw,
+    b.building_full_address,
+    b.postal_code,
+    b.address_block,
+    b.address_house_number,
+    b.geocode_match_method,
+    b.google_place_id,
+    b.google_maps_url
+from {{ ref("rental_prices_latest_known") }} o
+join {{ ref("dim_rental_listing") }} l using (listing_version_key)
+join {{ ref("dim_geography") }} g using (geography_key)
+join {{ ref("dim_observation_quality") }} q using (observation_quality_key)
+
+join {{ ref("dim_building") }} b using (building_version_key)

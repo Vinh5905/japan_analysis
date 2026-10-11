@@ -1,19 +1,19 @@
 # Apply this override only with pipeline/.env.production on a production host.
 # The base compose file stays unrestricted for local feature testing.
 services:
-  warehouse-postgres:
-    mem_limit: ${PIPELINE_POSTGRES_MEM_LIMIT:-512m}
-    cpus: "${PIPELINE_POSTGRES_CPUS:-0.40}"
-    pids_limit: ${PIPELINE_POSTGRES_PIDS_LIMIT:-256}
+    warehouse-postgres:
+        mem_limit: ${PIPELINE_POSTGRES_MEM_LIMIT:-512m}
+        cpus: "${PIPELINE_POSTGRES_CPUS:-0.40}"
+        pids_limit: ${PIPELINE_POSTGRES_PIDS_LIMIT:-256}
 
-  airflow-webserver:
-    environment:
-      AIRFLOW__WEBSERVER__WORKERS: ${AIRFLOW_WEBSERVER_WORKERS:-2}
-    mem_limit: ${AIRFLOW_WEBSERVER_MEM_LIMIT:-1024m}
-    cpus: "${AIRFLOW_WEBSERVER_CPUS:-0.50}"
-    pids_limit: ${AIRFLOW_WEBSERVER_PIDS_LIMIT:-512}
+    airflow-webserver:
+        environment:
+            AIRFLOW__WEBSERVER__WORKERS: ${AIRFLOW_WEBSERVER_WORKERS:-2}
+        mem_limit: ${AIRFLOW_WEBSERVER_MEM_LIMIT:-1024m}
+        cpus: "${AIRFLOW_WEBSERVER_CPUS:-0.50}"
+        pids_limit: ${AIRFLOW_WEBSERVER_PIDS_LIMIT:-512}
 
-  airflow-scheduler:
-    mem_limit: ${AIRFLOW_SCHEDULER_MEM_LIMIT:-512m}
-    cpus: "${AIRFLOW_SCHEDULER_CPUS:-0.50}"
-    pids_limit: ${AIRFLOW_SCHEDULER_PIDS_LIMIT:-512}
+    airflow-scheduler:
+        mem_limit: ${AIRFLOW_SCHEDULER_MEM_LIMIT:-512m}
+        cpus: "${AIRFLOW_SCHEDULER_CPUS:-0.50}"
+        pids_limit: ${AIRFLOW_SCHEDULER_PIDS_LIMIT:-512}

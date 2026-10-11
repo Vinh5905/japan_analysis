@@ -1,74 +1,82 @@
 version: 2
 
 models:
-  - name: stg_suumo__address_geocodes
-    description: "One cached result per address for GSI/chome_v1, including failures. Coordinate coverage is optional and must not remove listings."
-    columns:
-      - name: address_query
-        data_tests: [not_null, unique]
-      - name: status
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['matched', 'not_found', 'ambiguous', 'invalid_input', 'invalid_response', 'request_error']
-  - name: stg_suumo_parser_records
-    description: One source-conformed row per parser task from operational raw plus the notebook bootstrap seed; operational wins duplicate task IDs.
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-      - name: record_origin
-        data_tests:
-          - not_null
-          - accepted_values:
-              values: ['operational', 'notebook_seed']
-  - name: int_suumo__dates
-    description: Parsed update date, build date and parse timestamp, one row per parser task. Year-only build dates use January 1 with year precision.
-  - name: int_suumo__costs
-    description: Rent, nonparking charges, brokerage and insurance amounts, one row per parser task. Base monthly cost is rent plus management fee.
-  - name: int_suumo__building
-    description: Area, building age, unit floor, building floors and physical attributes, one row per parser task.
-  - name: int_suumo__parking
-    description: Parking availability, location, distance, fee, kind and capacity, one row per parser task.
-  - name: int_suumo__address
-    description: Japanese address components parsed step by step from the original address, one row per parser task.
-  - name: int_suumo__contract
-    description: Move-in status and period plus tenancy type and duration, one row per parser task.
-  - name: int_suumo__layout
-    description: Layout code and aggregated room components, one row per parser task even when layout_detail contains multiple rooms.
-  - name: int_suumo_rentals_history
-    description: Historical rental listings from operational and seeded raw inputs, one row per parser task. Station access remains source text here; parsed lines live in int_suumo__station_access.
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-      - name: data_hash
-        data_tests:
-          - not_null
-      - name: quality_issue_count
-        description: Sum of missing core, floor exceeding building, and layout parse failure flags; station failures are recorded only in station detail.
-  - name: int_suumo__station_access
-    description: One row per nonblank, nonsentinel station-access line, including lines that could not be parsed.
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('stg_suumo_parser_records')
-              field: task_id
-      - name: access_order
-        data_tests:
-          - not_null
-      - name: raw_line
-        description: Original source line with surrounding whitespace removed, before NFKC normalization.
-        data_tests:
-          - not_null
-      - name: parse_status
-        description: Parsed when line, station and travel time are all recognized; otherwise unparsed and parsed attributes are null.
-        data_tests:
-          - not_null
-          - accepted_values:
-              values: ['parsed', 'unparsed']
+    - name: stg_suumo__address_geocodes
+      description: "One cached result per address for GSI/chome_v1, including failures. Coordinate coverage is optional and must not remove listings."
+      columns:
+          - name: address_query
+            data_tests: [not_null, unique]
+          - name: status
+            data_tests:
+                - not_null
+                - accepted_values:
+                      arguments:
+                          values:
+                              [
+                                  "matched",
+                                  "not_found",
+                                  "ambiguous",
+                                  "invalid_input",
+                                  "invalid_response",
+                                  "request_error",
+                              ]
+    - name: stg_suumo_parser_records
+      description: One source-conformed row per parser task from operational raw plus the notebook bootstrap seed; operational wins duplicate task IDs.
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+          - name: record_origin
+            data_tests:
+                - not_null
+                - accepted_values:
+                      values: ["operational", "notebook_seed"]
+    - name: int_suumo__dates
+      description: Parsed update date, build date and parse timestamp, one row per parser task. Year-only build dates use January 1 with year precision.
+    - name: int_suumo__costs
+      description: Rent, nonparking charges, brokerage and insurance amounts, one row per parser task. Base monthly cost is rent plus management fee.
+    - name: int_suumo__building
+      description: Area, building age, unit floor, building floors and physical attributes, one row per parser task.
+    - name: int_suumo__parking
+      description: Parking availability, location, distance, fee, kind and capacity, one row per parser task.
+    - name: int_suumo__address
+      description: Japanese address components parsed step by step from the original address, one row per parser task.
+    - name: int_suumo__contract
+      description: Move-in status and period plus tenancy type and duration, one row per parser task.
+    - name: int_suumo__layout
+      description: Layout code and aggregated room components, one row per parser task even when layout_detail contains multiple rooms.
+    - name: int_suumo_rentals_history
+      description: Historical rental listings from operational and seeded raw inputs, one row per parser task. Station access remains source text here; parsed lines live in int_suumo__station_access.
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+          - name: data_hash
+            data_tests:
+                - not_null
+          - name: quality_issue_count
+            description: Sum of missing core, floor exceeding building, and layout parse failure flags; station failures are recorded only in station detail.
+    - name: int_suumo__station_access
+      description: One row per nonblank, nonsentinel station-access line, including lines that could not be parsed.
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('stg_suumo_parser_records')
+                      field: task_id
+          - name: access_order
+            data_tests:
+                - not_null
+          - name: raw_line
+            description: Original source line with surrounding whitespace removed, before NFKC normalization.
+            data_tests:
+                - not_null
+          - name: parse_status
+            description: Parsed when line, station and travel time are all recognized; otherwise unparsed and parsed attributes are null.
+            data_tests:
+                - not_null
+                - accepted_values:
+                      values: ["parsed", "unparsed"]

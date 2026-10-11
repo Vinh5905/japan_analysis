@@ -1,0 +1,37 @@
+version: 2
+models:
+    - name: int_suumo__zoning_inputs
+      description: "One Osaka named candidate and current provider POI input. No dimension dependency."
+      columns:
+          - name: building_key
+            data_tests: [unique, not_null]
+    - name: stg_mlit__datasets
+      description: "MLIT release dates are distinct from city source as-of and legal effective dates."
+    - name: stg_mlit__zoning_polygons
+      description: "Raw JGD2011 geometry plus normalized percentages; invalid geometry is never repaired."
+    - name: int_mlit__polygon_states
+      description: "GiST-indexed content-addressed polygon states across datasets; EPSG:6668."
+    - name: int_mlit__dataset_areas
+      description: "Dataset membership and source provenance separate from polygon identity."
+    - name: dim_zoning_area
+      description: "Reusable normalized geometry/business content; zoning FAR/BCR are designated planning values, not parcel-specific effective limits."
+      columns:
+          - name: zoning_area_key
+            data_tests: [unique, not_null]
+          - name: far_pct
+            description: "Designated FAR percentage, e.g. 400 means 400%; NULL is unknown."
+          - name: bcr_pct
+            description: "Designated building coverage ratio percentage."
+    - name: int_mlit__zoning_matches
+      description: "Immutable evaluation per run/building; candidate evidence retained for rejected matches."
+    - name: bridge_building_zoning
+      description: "Publication-time business history, not legal zoning history at observation time and not a multivalued bridge."
+      columns:
+          - name: building_zoning_version_key
+            data_tests: [unique, not_null]
+    - name: rental_price_observations_with_zoning
+      description: "All observations with one active publication; current changed POIs yield stale_location/NULL."
+    - name: rental_prices_latest_known_with_zoning
+      description: "Latest-known grain preserved with current published zoning."
+    - name: rental_listing_latest_with_zoning
+      description: "Existing analytics listing population plus published zoning; charts unchanged."

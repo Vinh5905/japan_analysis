@@ -1,6 +1,7 @@
 // Implemented by analytics/dbt/models/marts. PostgreSQL / dbt Core.
 // Business identity = (source_id, suumo_property_code); observation = task_id.
-// No physical room/building identity and no physical periodic snapshots.
+// Building candidate identity uses normalized name + chome geography; not verified physical ID.
+// Listing code still is not a physical room identity; no periodic snapshots.
 // Hash keys are deterministic text, not auto-increment IDs.
 // DBML PK/FK/NOT NULL annotations describe the logical contract:
 // dbt enforces uniqueness with indexes and integrity with data tests.
@@ -35,19 +36,12 @@ Table mart.dim_rental_listing {
   effective_to_parsed_at_utc timestamptz
   effective_to_task_id bigint
   is_current_version boolean [not null]
-  building_type text
-  structure text
+  room_number text
   direction text
-  building_age_years integer
-  building_total_floors integer
-  total_units_count integer
   floor_min integer
   floor_max integer
   floor_number integer
   layout_room_count integer
-  building_age_is_lower_bound boolean
-  built_at date
-  built_at_precision text [note: 'year or month; day 01 is a placeholder, not exact construction day']
   layout_normalized text
   layout_has_service_room boolean
   layout_space_count integer
@@ -82,7 +76,7 @@ Table mart.dim_rental_listing {
     (source_id, suumo_property_code, version_number) [unique]
   }
   Note: '''
-    SCD Type 2 for all listing descriptors, including rental terms.
+    SCD Type 2 for room/listing descriptors and rental terms; no building descriptors.
     Only descriptor changes create versions; price-only changes do not.
     Exact area changes within one band do not create a version.
     A -> B -> A creates three consecutive versions.
@@ -92,6 +86,50 @@ Table mart.dim_rental_listing {
     Full reconstruction handles late data and source corrections.
     Version numbers may shift after a historical correction; never use them as keys.
   '''
+}
+
+Table mart.dim_building {
+  building_version_key text [pk, note: 'MD5 JSON array [building_key, first event task]']
+  building_key text [not null]
+  source_id bigint [not null]
+  building_identity_status text [not null, note: 'named_candidate or unresolved_listing']
+  building_name text
+  geography_key text [not null]
+  version_number integer [not null]
+  effective_from_utc timestamptz [not null]
+  effective_from_observed_at_utc timestamptz [not null]
+  effective_from_task_id bigint [not null]
+  effective_to_utc timestamptz
+  effective_to_observed_at_utc timestamptz
+  effective_to_task_id bigint
+  is_current boolean [not null]
+  information_updated_at date
+  building_event_time_basis text
+  building_type text
+  structure text
+  building_total_floors integer
+  total_units_count integer
+  built_at date
+  built_at_precision text
+  building_full_address_raw text
+  building_full_address text
+  postal_code text
+  address_block text
+  address_house_number text
+  latitude double
+  longitude double
+  coordinate_level text [note: 'building_poi; not verified rooftop']
+  geocode_status text
+  geocode_provider text
+  geocode_matched_address text
+  geocode_match_method text
+  geocoded_at timestamptz
+  google_place_id text
+  google_maps_url text
+  Indexes {
+    (building_key, version_number) [unique]
+  }
+  Note: 'SCD2 ordered by source update date at Japan midnight, then observation timestamp/task. Missing source date falls back to observation time. Nonnull descriptors carry forward only. Unresolved identities isolate source/listing; current means latest known profile within that identity. Location metadata is latest-known enrichment, excluded from SCD2 attributes/hash.'
 }
 
 Table mart.dim_geography {
@@ -109,7 +147,7 @@ Table mart.dim_geography {
   geocode_provider text
   geocode_matched_address text
   geocoded_at timestamptz
-  Note: 'Identity is the normalized profile hash, excluding coordinates. Optional chome address-search point, not a building location. All-NULL profiles are retained; no invented administrative codes.'
+  Note: 'Identity is the normalized profile hash, excluding coordinates. Legacy chome point, no longer supplied to analysis views; current coordinates belong to building. All-NULL profiles are retained; no invented administrative codes.'
 }
 
 Table mart.dim_observation_quality {
@@ -141,6 +179,10 @@ Table mart.fct_rental_price_observation {
   insurance_jpy bigint
   parking_fee_jpy bigint
   exclusive_area_m2 numeric
+  building_version_key text [not null]
+  building_age_years integer
+  building_age_is_lower_bound boolean
+  building_attributes_conflict boolean
   Note: '''
     One eligible task per row, including unchanged-price observations.
     Missing identity/time goes to rental_price_mart_rejects, never a shared unknown listing.
@@ -186,3 +228,39 @@ Ref: mart.bridge_observation_station_access.station_label_key > mart.dim_station
 // rental_prices_latest_known: one latest task per source + code, not confirmed active stock.
 // rental_price_mart_rejects: missing identity/time and invalid records for audit.
 // As-of: filter timestamp <= cutoff, then DISTINCT ON source_id, code ordered timestamp/task DESC.
+
+Ref: mart.fct_rental_price_observation.building_version_key > mart.dim_building.building_version_key
+Ref: mart.dim_building.geography_key > mart.dim_geography.geography_key
+
+Table mart.dim_zoning_area {
+  zoning_area_key text [pk]
+  city_code text
+  geom geometry
+  zoning_code text
+  zoning_name text
+  far_pct numeric
+  bcr_pct numeric
+  Note: 'Content-addressed normalized MLIT polygon. Designated planning percentages, not parcel-specific effective limits.'
+}
+Table mart.bridge_building_zoning {
+  building_zoning_version_key text [pk]
+  building_key text
+  zoning_area_key text
+  version_number bigint
+  valid_from_sequence bigint
+  valid_to_sequence bigint
+  valid_from timestamptz
+  valid_to timestamptz
+  is_current boolean
+  zoning_status text
+  zoning_code text
+  zoning_name text
+  far_pct numeric
+  bcr_pct numeric
+  starting_publication_run_id text
+  Note: 'Publication-time temporal assignment. Unchanged business attributes reuse version; not a multivalued bridge. Building/listing hashes unchanged.'
+}
+Ref: mart.bridge_building_zoning.zoning_area_key > mart.dim_zoning_area.zoning_area_key
+// building_key references the durable candidate identity, not a unique SCD2 dimension row.
+// *_with_zoning views join by building_key + one active publication and preserve task grain.
+// MLIT dataset membership/run inputs/results/publication audit are separate raw/enrichment relations.

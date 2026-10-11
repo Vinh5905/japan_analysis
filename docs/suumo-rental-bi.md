@@ -6,17 +6,19 @@ listing, phân khúc sản phẩm, khả năng tiếp cận ga và chất lượ
 
 ## Danh mục board
 
-| Board | Người dùng chính | Câu hỏi quyết định |
-| --- | --- | --- |
-| `rental_market_overview.yml` | Portfolio/market manager | Thị trường hiện có quy mô, mặt bằng giá và cơ cấu nguồn cung ra sao? |
-| `rental_pricing_opportunities.yml` | Pricing analyst/landlord | Listing nào lệch đáng kể so với peer group đủ mẫu? |
-| `rental_feature_pricing.yml` | Product/asset manager | Tuổi nhà, tầng, hướng, kết cấu và loại nhà liên hệ với premium thế nào? |
-| `rental_station_access.yml` | Location analyst | Ga/tuyến nào có nguồn cung sâu, mức giá và travel time đáng chú ý? |
-| `rental_data_quality.yml` | Data/analytics engineer | Coverage và parse issue có đủ tốt để tin dashboard không? |
+| Board                              | Người dùng chính         | Câu hỏi quyết định                                                      |
+| ---------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
+| `rental_market_overview.yml`       | Portfolio/market manager | Thị trường hiện có quy mô, mặt bằng giá và cơ cấu nguồn cung ra sao?    |
+| `rental_pricing_opportunities.yml` | Pricing analyst/landlord | Listing nào lệch đáng kể so với peer group đủ mẫu?                      |
+| `rental_feature_pricing.yml`       | Product/asset manager    | Tuổi nhà, tầng, hướng, kết cấu và loại nhà liên hệ với premium thế nào? |
+| `rental_station_access.yml`        | Location analyst         | Ga/tuyến nào có nguồn cung sâu, mức giá và travel time đáng chú ý?      |
+| `rental_data_quality.yml`          | Data/analytics engineer  | Coverage và parse issue có đủ tốt để tin dashboard không?               |
 
 ## Quy tắc grain
 
 - `rental_listing_latest` có một dòng cho mỗi `(source_id, suumo_property_code)`.
+- View detail nối `dim_building` qua `building_version_key` của observation; tên tòa
+  thiếu HTML vẫn NULL. Các cột giá/tuổi nhà/kết cấu hiện có tiếp tục được xuất.
 - “Latest-known” chỉ là observation mới nhất trong warehouse, không chứng minh
   listing còn active ngoài thị trường.
 - Median và percentile luôn được tính lại trên population sau filter. Không

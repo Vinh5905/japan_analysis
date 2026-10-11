@@ -1,72 +1,72 @@
 version: 2
 
 exposures:
-  - name: rental_market_overview
-    label: SUUMO rental market overview
-    type: dashboard
-    maturity: medium
-    url: http://localhost:3000/rental_market_overview
-    description: >-
-      Listing latest-known, median asking rent, rent/m² and market supply by
-      locality, layout and area. Recomputes percentiles after user filters.
-    depends_on:
-      - ref('rental_listing_latest')
-    owner:
-      name: Japan Analysis
+    - name: rental_market_overview
+      label: SUUMO rental market overview
+      type: dashboard
+      maturity: medium
+      url: http://localhost:3000/rental_market_overview
+      description: >-
+          Listing latest-known, median asking rent, rent/m² and market supply by
+          locality, layout and area. Recomputes percentiles after user filters.
+      depends_on:
+          - ref('rental_listing_latest')
+      owner:
+          name: Japan Analysis
 
-  - name: rental_pricing_opportunities
-    label: SUUMO comparable pricing opportunities
-    type: dashboard
-    maturity: medium
-    url: http://localhost:3000/rental_pricing_opportunities
-    description: >-
-      Asking rent relative to peer medians with sample coverage and listing
-      drilldown. Peer groups include the scored listing; gaps are investigation
-      signals rather than investment recommendations.
-    depends_on:
-      - ref('rental_listing_comparable_benchmark')
-    owner:
-      name: Japan Analysis
+    - name: rental_pricing_opportunities
+      label: SUUMO comparable pricing opportunities
+      type: dashboard
+      maturity: medium
+      url: http://localhost:3000/rental_pricing_opportunities
+      description: >-
+          Asking rent relative to peer medians with sample coverage and listing
+          drilldown. Peer groups include the scored listing; gaps are investigation
+          signals rather than investment recommendations.
+      depends_on:
+          - ref('rental_listing_comparable_benchmark')
+      owner:
+          name: Japan Analysis
 
-  - name: rental_feature_pricing
-    label: SUUMO descriptive feature premiums
-    type: dashboard
-    maturity: medium
-    url: http://localhost:3000/rental_feature_pricing
-    description: >-
-      Sample-weighted median rent premiums for age, floor, direction, structure
-      and building type within locality/layout/area strata. Descriptive only.
-    depends_on:
-      - ref('rental_feature_price_summary')
-    owner:
-      name: Japan Analysis
+    - name: rental_feature_pricing
+      label: SUUMO descriptive feature premiums
+      type: dashboard
+      maturity: medium
+      url: http://localhost:3000/rental_feature_pricing
+      description: >-
+          Sample-weighted median rent premiums for age, floor, direction, structure
+          and building type within locality/layout/area strata. Descriptive only.
+      depends_on:
+          - ref('rental_feature_price_summary')
+      owner:
+          name: Japan Analysis
 
-  - name: rental_station_access
-    label: SUUMO station accessibility market
-    type: dashboard
-    maturity: medium
-    url: http://localhost:3000/rental_station_access
-    description: >-
-      Rental supply, asking prices and travel minutes by source line/station
-      label. Deduplicates listing-station routes before aggregation; a listing
-      can belong to multiple stations, so station totals are not additive.
-    depends_on:
-      - ref('rental_listing_latest')
-      - ref('bridge_observation_station_access')
-      - ref('dim_station_label')
-    owner:
-      name: Japan Analysis
+    - name: rental_station_access
+      label: SUUMO station accessibility market
+      type: dashboard
+      maturity: medium
+      url: http://localhost:3000/rental_station_access
+      description: >-
+          Rental supply, asking prices and travel minutes by source line/station
+          label. Deduplicates listing-station routes before aggregation; a listing
+          can belong to multiple stations, so station totals are not additive.
+      depends_on:
+          - ref('rental_listing_latest')
+          - ref('bridge_observation_station_access')
+          - ref('dim_station_label')
+      owner:
+          name: Japan Analysis
 
-  - name: rental_data_quality
-    label: SUUMO rental BI data quality
-    type: dashboard
-    maturity: medium
-    url: http://localhost:3000/rental_data_quality
-    description: >-
-      Core field coverage, parse issues, record origin and mart rejects, with
-      task-level drilldown for debugging the raw-to-analytics pipeline.
-    depends_on:
-      - ref('rental_listing_latest')
-      - ref('rental_price_mart_rejects')
-    owner:
-      name: Japan Analysis
+    - name: rental_data_quality
+      label: SUUMO rental BI data quality
+      type: dashboard
+      maturity: medium
+      url: http://localhost:3000/rental_data_quality
+      description: >-
+          Core field coverage, parse issues, record origin and mart rejects, with
+          task-level drilldown for debugging the raw-to-analytics pipeline.
+      depends_on:
+          - ref('rental_listing_latest')
+          - ref('rental_price_mart_rejects')
+      owner:
+          name: Japan Analysis

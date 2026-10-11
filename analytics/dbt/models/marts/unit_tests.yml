@@ -1,63 +1,195 @@
 version: 2
 
 unit_tests:
-  - name: price_history_crosses_scd_versions_and_breaks_timestamp_ties
-    model: rental_price_observations
-    given:
-      - input: ref('fct_rental_price_observation')
-        rows:
-          - {task_id: 30, geography_key: G, listing_version_key: v2, parsed_at_utc: '2026-01-02 00:00:00+00', rent_jpy: 90000, management_fee_jpy: 0, exclusive_area_m2: 30}
-          - {task_id: 10, geography_key: G, listing_version_key: v1, parsed_at_utc: '2026-01-01 00:00:00+00', rent_jpy: 80000, management_fee_jpy: 2000, exclusive_area_m2: 20}
-          - {task_id: 20, geography_key: G, listing_version_key: v1, parsed_at_utc: '2026-01-02 00:00:00+00', rent_jpy: 82000, management_fee_jpy: null, exclusive_area_m2: 0}
-          - {task_id: 40, geography_key: G, listing_version_key: v3, parsed_at_utc: '2026-01-03 00:00:00+00', rent_jpy: 50000, management_fee_jpy: 1000, exclusive_area_m2: 25}
-      - input: ref('dim_rental_listing')
-        rows:
-          - {listing_version_key: v1, source_id: 1, suumo_property_code: A}
-          - {listing_version_key: v2, source_id: 1, suumo_property_code: A}
-          - {listing_version_key: v3, source_id: 2, suumo_property_code: A}
-      - input: ref('dim_geography')
-        rows:
-          - {geography_key: G}
-    # PostgreSQL unconstrained numeric ratios retain division scale.
-    expect:
-      rows:
-        - {task_id: 10, previous_task_id: null, previous_rent_jpy: null, rent_change_jpy: null, next_task_id: 20, is_latest_known: false, base_monthly_cost_jpy: 82000, rent_per_m2_jpy: "4000.0000000000000000"}
-        - {task_id: 20, previous_task_id: 10, previous_rent_jpy: 80000, rent_change_jpy: 2000, next_task_id: 30, is_latest_known: false, base_monthly_cost_jpy: null, rent_per_m2_jpy: null}
-        - {task_id: 30, previous_task_id: 20, previous_rent_jpy: 82000, rent_change_jpy: 8000, next_task_id: null, is_latest_known: true, base_monthly_cost_jpy: 90000, rent_per_m2_jpy: "3000.0000000000000000"}
-        - {task_id: 40, previous_task_id: null, previous_rent_jpy: null, rent_change_jpy: null, next_task_id: null, is_latest_known: true, base_monthly_cost_jpy: 51000, rent_per_m2_jpy: "2000.0000000000000000"}
+    - name: price_history_crosses_scd_versions_and_breaks_timestamp_ties
+      model: rental_price_observations
+      given:
+          - input: ref('fct_rental_price_observation')
+            rows:
+                - {
+                      task_id: 30,
+                      geography_key: G,
+                      building_version_key: b,
+                      listing_version_key: v2,
+                      parsed_at_utc: "2026-01-02 00:00:00+00",
+                      rent_jpy: 90000,
+                      management_fee_jpy: 0,
+                      exclusive_area_m2: 30,
+                  }
+                - {
+                      task_id: 10,
+                      geography_key: G,
+                      building_version_key: b,
+                      listing_version_key: v1,
+                      parsed_at_utc: "2026-01-01 00:00:00+00",
+                      rent_jpy: 80000,
+                      management_fee_jpy: 2000,
+                      exclusive_area_m2: 20,
+                  }
+                - {
+                      task_id: 20,
+                      geography_key: G,
+                      building_version_key: b,
+                      listing_version_key: v1,
+                      parsed_at_utc: "2026-01-02 00:00:00+00",
+                      rent_jpy: 82000,
+                      management_fee_jpy: null,
+                      exclusive_area_m2: 0,
+                  }
+                - {
+                      task_id: 40,
+                      geography_key: G,
+                      building_version_key: b,
+                      listing_version_key: v3,
+                      parsed_at_utc: "2026-01-03 00:00:00+00",
+                      rent_jpy: 50000,
+                      management_fee_jpy: 1000,
+                      exclusive_area_m2: 25,
+                  }
+          - input: ref('dim_rental_listing')
+            rows:
+                - { listing_version_key: v1, source_id: 1, suumo_property_code: A }
+                - { listing_version_key: v2, source_id: 1, suumo_property_code: A }
+                - { listing_version_key: v3, source_id: 2, suumo_property_code: A }
+          - input: ref('dim_building')
+            rows:
+                - { building_version_key: b }
+          - input: ref('dim_geography')
+            rows:
+                - { geography_key: G }
+      # PostgreSQL unconstrained numeric ratios retain division scale.
+      expect:
+          rows:
+              - {
+                    task_id: 10,
+                    previous_task_id: null,
+                    previous_rent_jpy: null,
+                    rent_change_jpy: null,
+                    next_task_id: 20,
+                    is_latest_known: false,
+                    base_monthly_cost_jpy: 82000,
+                    rent_per_m2_jpy: "4000.0000000000000000",
+                }
+              - {
+                    task_id: 20,
+                    previous_task_id: 10,
+                    previous_rent_jpy: 80000,
+                    rent_change_jpy: 2000,
+                    next_task_id: 30,
+                    is_latest_known: false,
+                    base_monthly_cost_jpy: null,
+                    rent_per_m2_jpy: null,
+                }
+              - {
+                    task_id: 30,
+                    previous_task_id: 20,
+                    previous_rent_jpy: 82000,
+                    rent_change_jpy: 8000,
+                    next_task_id: null,
+                    is_latest_known: true,
+                    base_monthly_cost_jpy: 90000,
+                    rent_per_m2_jpy: "3000.0000000000000000",
+                }
+              - {
+                    task_id: 40,
+                    previous_task_id: null,
+                    previous_rent_jpy: null,
+                    rent_change_jpy: null,
+                    next_task_id: null,
+                    is_latest_known: true,
+                    base_monthly_cost_jpy: 51000,
+                    rent_per_m2_jpy: "2000.0000000000000000",
+                }
 
-  - name: mart_rejects_missing_identity_time_and_invalid_rows
-    model: rental_price_mart_rejects
-    given:
-      - input: ref('int_suumo_rentals_history')
-        rows:
-          - {task_id: 1, source_id: 1, suumo_property_code: A, parsed_at_utc: '2026-01-01 00:00:00+00', is_valid: true}
-          - {task_id: 2, source_id: 1, suumo_property_code: '  ', parsed_at_utc: '2026-01-01 00:00:00+00', is_valid: true}
-          - {task_id: 3, source_id: 1, suumo_property_code: A, parsed_at_utc: null, is_valid: true}
-          - {task_id: 4, source_id: null, suumo_property_code: A, parsed_at_utc: '2026-01-01 00:00:00+00', is_valid: true}
-          - {task_id: 5, source_id: 1, suumo_property_code: A, parsed_at_utc: '2026-01-01 00:00:00+00', is_valid: false}
-    expect:
-      rows:
-        - {task_id: 2, reject_reason: missing_listing_code}
-        - {task_id: 3, reject_reason: missing_parsed_at}
-        - {task_id: 4, reject_reason: missing_source_id}
-        - {task_id: 5, reject_reason: invalid_record}
+    - name: mart_rejects_missing_identity_time_and_invalid_rows
+      model: rental_price_mart_rejects
+      given:
+          - input: ref('int_suumo_rentals_history')
+            rows:
+                - {
+                      task_id: 1,
+                      source_id: 1,
+                      suumo_property_code: A,
+                      parsed_at_utc: "2026-01-01 00:00:00+00",
+                      is_valid: true,
+                  }
+                - {
+                      task_id: 2,
+                      source_id: 1,
+                      suumo_property_code: "  ",
+                      parsed_at_utc: "2026-01-01 00:00:00+00",
+                      is_valid: true,
+                  }
+                - {
+                      task_id: 3,
+                      source_id: 1,
+                      suumo_property_code: A,
+                      parsed_at_utc: null,
+                      is_valid: true,
+                  }
+                - {
+                      task_id: 4,
+                      source_id: null,
+                      suumo_property_code: A,
+                      parsed_at_utc: "2026-01-01 00:00:00+00",
+                      is_valid: true,
+                  }
+                - {
+                      task_id: 5,
+                      source_id: 1,
+                      suumo_property_code: A,
+                      parsed_at_utc: "2026-01-01 00:00:00+00",
+                      is_valid: false,
+                  }
+      expect:
+          rows:
+              - { task_id: 2, reject_reason: missing_listing_code }
+              - { task_id: 3, reject_reason: missing_parsed_at }
+              - { task_id: 4, reject_reason: missing_source_id }
+              - { task_id: 5, reject_reason: invalid_record }
 
-  - name: geography_coordinates_keep_distinct_profiles_and_null_failures
-    model: dim_geography
-    given:
-      - input: ref('int_suumo__mart_observations')
-        format: sql
-        rows: |
-          select 'A'::text as geography_key, '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"西宮原","chome":1}'::jsonb as geography_attributes
-          union all select 'A', '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"西宮原","chome":1}'::jsonb
-          union all select 'B', '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"東三国","chome":2}'::jsonb
-          union all select 'C', '{"prefecture":null,"municipality":null,"locality":null,"chome":null}'::jsonb
-      - input: ref('stg_suumo__address_geocodes')
-        rows:
-          - {address_query: '大阪府大阪市淀川区西宮原1丁目', latitude: 34.732430, longitude: 135.492401, coordinate_level: chome, status: matched, provider: gsi_address_search, matched_address: '大阪府大阪市淀川区西宮原一丁目', geocoded_at: '2026-10-08 00:00:00+00'}
-    expect:
-      rows:
-        - {geography_key: A, latitude: 34.732430, longitude: 135.492401, coordinate_level: chome, geocode_status: matched}
-        - {geography_key: B, latitude: null, longitude: null, coordinate_level: null, geocode_status: not_requested}
-        - {geography_key: C, latitude: null, longitude: null, coordinate_level: null, geocode_status: invalid_input}
+    - name: geography_coordinates_keep_distinct_profiles_and_null_failures
+      model: dim_geography
+      given:
+          - input: ref('int_suumo__mart_observations')
+            format: sql
+            rows: |
+                select 'A'::text as geography_key, '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"西宮原","chome":1}'::jsonb as geography_attributes
+                union all select 'A', '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"西宮原","chome":1}'::jsonb
+                union all select 'B', '{"prefecture":"大阪府","municipality":"大阪市","ward":"淀川区","locality":"東三国","chome":2}'::jsonb
+                union all select 'C', '{"prefecture":null,"municipality":null,"locality":null,"chome":null}'::jsonb
+          - input: ref('stg_suumo__address_geocodes')
+            rows:
+                - {
+                      address_query: "大阪府大阪市淀川区西宮原1丁目",
+                      latitude: 34.732430,
+                      longitude: 135.492401,
+                      coordinate_level: chome,
+                      status: matched,
+                      provider: gsi_address_search,
+                      matched_address: "大阪府大阪市淀川区西宮原一丁目",
+                      geocoded_at: "2026-10-08 00:00:00+00",
+                  }
+      expect:
+          rows:
+              - {
+                    geography_key: A,
+                    latitude: 34.732430,
+                    longitude: 135.492401,
+                    coordinate_level: chome,
+                    geocode_status: matched,
+                }
+              - {
+                    geography_key: B,
+                    latitude: null,
+                    longitude: null,
+                    coordinate_level: null,
+                    geocode_status: not_requested,
+                }
+              - {
+                    geography_key: C,
+                    latitude: null,
+                    longitude: null,
+                    coordinate_level: null,
+                    geocode_status: invalid_input,
+                }

@@ -40,8 +40,16 @@ def charts(board: dict):
 def render(name: str, output: Path, **variables) -> dict:
     """Render a board without cache and verify its chart count and KPI grain."""
     command = [
-        "dct", "render", f"charts/{name}.yml", "--format", "json",
-        "--output", str(output), "--no-cache", "--project-dir", str(PROJECT),
+        "dct",
+        "render",
+        f"charts/{name}.yml",
+        "--format",
+        "json",
+        "--output",
+        str(output),
+        "--no-cache",
+        "--project-dir",
+        str(PROJECT),
     ]
     for key, value in variables.items():
         command.extend(["--var", f"{key}={value}"])
@@ -84,11 +92,18 @@ def main() -> None:
             total = cursor.fetchone()[0]
             market = defaults["rental_market_overview"]
             assert metric(market, "listing_count_kpi") == total
-            assert metric(defaults["rental_data_quality"], "latest_listing_kpi") == total
+            assert (
+                metric(defaults["rental_data_quality"], "latest_listing_kpi") == total
+            )
 
-            positions = defaults["rental_pricing_opportunities"]["price_position_chart"]["data"]
+            positions = defaults["rental_pricing_opportunities"][
+                "price_position_chart"
+            ]["data"]
             if positions:
-                assert abs(sum(float(row["listing_share_ratio"]) for row in positions) - 1) < 1e-9
+                assert (
+                    abs(sum(float(row["listing_share_ratio"]) for row in positions) - 1)
+                    < 1e-9
+                )
 
             cursor.execute("""
                 select layout_normalized, count(*)
@@ -101,10 +116,13 @@ def main() -> None:
                 filtered = render("rental_market_overview", output, layout=layout[0])
                 assert metric(filtered, "listing_count_kpi") == layout[1]
                 peer = render("rental_pricing_opportunities", output, layout=layout[0])
-                cursor.execute("""
+                cursor.execute(
+                    """
                     select count(*) from analytics.rental_listing_comparable_benchmark
                     where layout_normalized = %s and rent_position <> 'not_scored'
-                """, (layout[0],))
+                """,
+                    (layout[0],),
+                )
                 assert metric(peer, "scored_listings_kpi") == cursor.fetchone()[0]
 
             cursor.execute("""
@@ -113,10 +131,16 @@ def main() -> None:
             """)
             locality = cursor.fetchone()
             if locality:
-                filtered = render("rental_market_overview", output, locality=locality[0])
+                filtered = render(
+                    "rental_market_overview", output, locality=locality[0]
+                )
                 assert metric(filtered, "listing_count_kpi") == locality[1]
 
-            empty = render("rental_market_overview", output, locality="__bi_smoke_no_such_locality__")
+            empty = render(
+                "rental_market_overview",
+                output,
+                locality="__bi_smoke_no_such_locality__",
+            )
             assert metric(empty, "listing_count_kpi") == 0
             assert metric(empty, "median_rent_kpi") is None
 
@@ -133,7 +157,10 @@ def main() -> None:
 
             for feature in ("floor_band", "direction", "structure", "building_type"):
                 render("rental_feature_pricing", output, feature_name=feature)
-            print("PASS population, filter, peer shares, empty state and station distinct-count checks", flush=True)
+            print(
+                "PASS population, filter, peer shares, empty state and station distinct-count checks",
+                flush=True,
+            )
     finally:
         connection.rollback()
         connection.close()

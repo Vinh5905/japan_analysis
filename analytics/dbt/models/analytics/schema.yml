@@ -1,87 +1,93 @@
 version: 2
 
 models:
-  - name: rental_listing_latest
-    description: >
-      One BI-ready row per source and SUUMO property code, selected from the
-      latest warehouse observation. Latest known does not mean currently active.
-    columns:
-      - name: task_id
-        data_tests: [not_null, unique]
-      - name: suumo_property_code
-        data_tests: [not_null]
-      - name: record_origin
-        description: Operational warehouse record or local notebook bootstrap seed.
-        data_tests:
-          - not_null
-          - accepted_values:
-              values: [operational, notebook_seed]
+    - name: rental_listing_latest
+      description: >
+          One BI-ready row per source and SUUMO property code, selected from the
+          latest warehouse observation. Latest known does not mean currently active.
+      columns:
+          - name: task_id
+            data_tests: [not_null, unique]
+          - name: latitude
+            description: "Matched building POI latitude; no fallback to legacy chome point."
+          - name: longitude
+            description: "Matched building POI longitude; NULL when unresolved/unmatched."
+          - name: building_full_address
+            description: "Provider-matched chome plus block/house number; SUUMO source address remains unchanged."
+          - name: suumo_property_code
+            data_tests: [not_null]
+          - name: record_origin
+            description: Operational warehouse record or local notebook bootstrap seed.
+            data_tests:
+                - not_null
+                - accepted_values:
+                      values: [operational, notebook_seed]
 
-  - name: rental_market_price_summary
-    description: >
-      Group 1 BI product: latest-known price distribution at five explicit drill
-      levels. Filter market_level before aggregating listing_count.
-    columns:
-      - name: market_segment_key
-        data_tests: [not_null, unique]
-      - name: market_level
-        data_tests:
-          - not_null
-          - accepted_values:
-              values:
-                - overall
-                - ward
-                - locality
-                - locality_layout_area
-                - locality_layout_area_building
-      - name: listing_count
-        data_tests: [not_null]
+    - name: rental_market_price_summary
+      description: >
+          Group 1 BI product: latest-known price distribution at five explicit drill
+          levels. Filter market_level before aggregating listing_count.
+      columns:
+          - name: market_segment_key
+            data_tests: [not_null, unique]
+          - name: market_level
+            data_tests:
+                - not_null
+                - accepted_values:
+                      values:
+                          - overall
+                          - ward
+                          - locality
+                          - locality_layout_area
+                          - locality_layout_area_building
+          - name: listing_count
+            data_tests: [not_null]
 
-  - name: rental_listing_comparable_benchmark
-    description: >
-      Group 2 BI product: each latest listing compared with the first peer tier
-      containing at least five known rents. Peer median includes the listing.
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-          - relationships:
-              to: ref('rental_listing_latest')
-              field: task_id
-      - name: benchmark_tier
-        data_tests:
-          - accepted_values:
-              values:
-                - locality_layout_area_building
-                - ward_layout_area_building
-                - ward_layout_area
-                - insufficient_sample
-      - name: rent_position
-        data_tests:
-          - accepted_values:
-              values:
-                - below_peer_median_10pct
-                - above_peer_median_10pct
-                - within_10pct_of_peer_median
-                - not_scored
+    - name: rental_listing_comparable_benchmark
+      description: >
+          Group 2 BI product: each latest listing compared with the first peer tier
+          containing at least five known rents. Peer median includes the listing.
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+                - relationships:
+                      to: ref('rental_listing_latest')
+                      field: task_id
+          - name: benchmark_tier
+            data_tests:
+                - accepted_values:
+                      values:
+                          - locality_layout_area_building
+                          - ward_layout_area_building
+                          - ward_layout_area
+                          - insufficient_sample
+          - name: rent_position
+            data_tests:
+                - accepted_values:
+                      values:
+                          - below_peer_median_10pct
+                          - above_peer_median_10pct
+                          - within_10pct_of_peer_median
+                          - not_scored
 
-  - name: rental_feature_price_summary
-    description: >
-      Group 3 BI product: descriptive feature-price associations inside the
-      same locality, layout and area band. Results do not establish causality.
-    columns:
-      - name: feature_segment_key
-        data_tests: [not_null, unique]
-      - name: feature_name
-        data_tests:
-          - not_null
-          - accepted_values:
-              values:
-                - building_age_band
-                - floor_band
-                - direction
-                - structure
-                - building_type
-      - name: listing_count
-        data_tests: [not_null]
+    - name: rental_feature_price_summary
+      description: >
+          Group 3 BI product: descriptive feature-price associations inside the
+          same locality, layout and area band. Results do not establish causality.
+      columns:
+          - name: feature_segment_key
+            data_tests: [not_null, unique]
+          - name: feature_name
+            data_tests:
+                - not_null
+                - accepted_values:
+                      values:
+                          - building_age_band
+                          - floor_band
+                          - direction
+                          - structure
+                          - building_type
+          - name: listing_count
+            data_tests: [not_null]

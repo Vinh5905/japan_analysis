@@ -3,19 +3,21 @@
 ## Grain và quyết định nghiệp vụ
 
 Một fact = một task hợp lệ. Listing identity là `(source_id, suumo_property_code)`;
-không suy diễn thành định danh căn hộ/tòa nhà vật lý. Giữ dimension listing rộng
-với thuộc tính building, room và điều kiện thuê; không tách building/room.
+không suy diễn thành định danh căn hộ vật lý. `dim_rental_listing` giữ thuộc tính
+căn/listing và điều kiện thuê; `dim_building` giữ thuộc tính ứng viên tòa theo SCD2.
+Ứng viên tòa dùng tên chuẩn hóa + geography chōme, chưa phải tòa đã xác minh.
 
-| Task | Code | Giá | Hướng | Version |
-| --- | --- | ---: | --- | --- |
-| 101 | A | 80000 | Nam | 1 |
-| 205 | A | 82000 | Nam | 1 |
-| 390 | A | 82000 | Đông | 2 |
-| 480 | A | 82000 | Nam | 3 |
+| Task | Code |   Giá | Hướng | Version |
+| ---- | ---- | ----: | ----- | ------- |
+| 101  | A    | 80000 | Nam   | 1       |
+| 205  | A    | 82000 | Nam   | 1       |
+| 390  | A    | 82000 | Đông  | 2       |
+| 480  | A    | 82000 | Nam   | 3       |
 
 `parsed_at_utc` là thời điểm xử lý, không phải thời điểm giá có hiệu lực ngoài
-thị trường. `information_updated_at` được giữ ở intermediate, không đưa vào mart.
-Không tạo periodic snapshot; không thay crawler hoặc backfill notebook.
+thị trường. `information_updated_at` dùng để xếp lịch sử building; thiếu ngày thì
+fallback thời điểm quan sát. Không tạo periodic snapshot và không suy diễn tên
+từ dữ liệu notebook thiếu HTML. Xem [building runbook](suumo-buildings.md).
 
 ## SCD2 và nạp lại
 
@@ -73,9 +75,9 @@ hoặc as-of trước khi tính. Không cộng tất cả observation để đ�
 
 ## Model và vận hành
 
-DBML: `docs/suumo-rental-price-star.dbml`. Bảy bảng mart: năm dimension,
+DBML: `docs/suumo-rental-price-star.dbml`. Tám bảng mart: sáu dimension,
 một fact và một bridge. Ba view: observations (derived measures), latest known,
-rejects. Hai helper table ở intermediate phục vụ lập phiên bản.
+rejects. Intermediate có mart observations, listing timeline và building events/timeline.
 
 Models dùng dbt table materialization, dựng lại từ warehouse history mỗi lần.
 Đây là lựa chọn rõ ràng để xử lý late arrival, source correction và rerun ở quy mô
@@ -89,7 +91,7 @@ make -C pipeline dbt-build
 make -C pipeline dbt-build select='int_suumo__mart_observations+ rental_price_mart_rejects'
 ```
 
-Airflow chạy `dbt build` sau load, gồm model và tests, rồi `dbt test` toàn bộ. PK được bảo vệ bằng unique index; FK và
+Airflow dùng Cosmos chạy từng model/test theo manifest sau load; nhánh geography có gate enrichment. PK được bảo vệ bằng unique index; FK và
 các invariant được kiểm tra bằng dbt tests, không tạo physical FK giữa các table
 thường xuyên rebuild. Không dùng DBML như migration DDL.
 
@@ -123,7 +125,6 @@ consecutive versions, station route coverage, fee semantics, và fixture cho
 new listing, price-only change, unchanged task, A→B→A, late-order input,
 timestamp ties, NULL descriptor và cùng code thuộc hai nguồn khác nhau.
 
-
 ### Kết quả kiểm chứng local (2026-09-25)
 
 - Trước raw seed, rebuild từ cùng input giữ nguyên fingerprint của 10 mart
@@ -138,7 +139,11 @@ timestamp ties, NULL descriptor và cùng code thuộc hai nguồn khác nhau.
   chưa chạy parser chính thức của dbdiagram.
 - Các kiểm chứng trên không phải kiểm thử tải production hoặc deploy lên VPS.
 
+## Tọa độ building và cache chōme legacy
 
-## Tọa độ địa chỉ chōme
-
-GSI enrichment chạy bằng Python sau mart observations và trước dim geography; cache ở `raw.suumo_address_geocodes`. Tọa độ và metadata ở `dim_geography`, fact dùng `geography_key`; history/latest views xuất sẵn tọa độ. Không đổi hash/SCD2, không cập nhật Charts. Xem [runbook geocoding](suumo-geocoding.md) và notebook `03_geocode_addresses.ipynb` để chạy thử, bootstrap/backfill, retry và kiểm chứng coverage.
+`dim_building` lưu địa chỉ chi tiết và điểm `building_poi` khi khớp tên +
+chōme + block/số nhà từ provider. Fact tiếp tục dùng `building_version_key`;
+history/latest views đọc điểm building, giữ NULL nếu thiếu tên hoặc chưa khớp.
+Enrichment không đổi hash/khóa SCD2. `dim_geography` và cache GSI chōme giữ
+legacy; DAG không gọi GSI và views không fallback sang điểm khu vực.
+Xem [runbook building locator](suumo-building-locations.md). Không sửa Charts.

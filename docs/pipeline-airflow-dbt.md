@@ -447,13 +447,13 @@ Lỗi loader không trả summary hoặc lỗi model/test cũng làm task cuối
 Chạy toàn graph trên raw hiện có, không đọc/claim source batch:
 
 ```json
-{"mode": "dbt_only"}
+{ "mode": "dbt_only" }
 ```
 
 Chạy từ address và toàn bộ downstream:
 
 ```json
-{"mode": "dbt_only", "model": "int_suumo__address"}
+{ "mode": "dbt_only", "model": "int_suumo__address" }
 ```
 
 `model` chỉ nhận tên model enabled chính xác, chỉ dùng với `dbt_only`; không
@@ -534,7 +534,31 @@ khi dùng script. Kết quả JSON/baseline nằm trong
 (đều Git ignored). Run QA lỗi được giữ trong lịch sử metadata; không xóa lịch sử
 để làm sạch Grid.
 
+## Tọa độ địa chỉ chōme — legacy
 
-## Tọa độ địa chỉ chōme
+Cache GSI `raw.suumo_address_geocodes` và tọa độ trong `dim_geography` được giữ
+để bảo toàn dữ liệu cũ. DAG hiện không chạy GSI; views history/latest lấy tọa
+độ building và không fallback chōme. Notebook `03_geocode_addresses.ipynb`
+và lệnh geocode thủ công vẫn phục vụ thử nghiệm legacy. Xem
+[runbook geocoding](suumo-geocoding.md) và [building locator](suumo-building-locations.md).
 
-GSI enrichment chạy bằng Python sau mart observations và trước dim geography; cache ở `raw.suumo_address_geocodes`. Tọa độ và metadata ở `dim_geography`, fact dùng `geography_key`; history/latest views xuất sẵn tọa độ. Không đổi hash/SCD2, không cập nhật Charts. Xem [runbook geocoding](suumo-geocoding.md) và notebook `03_geocode_addresses.ipynb` để chạy thử, bootstrap/backfill, retry và kiểm chứng coverage.
+## Building names và dim building — local 2026-10-10
+
+Parser mới lấy tên/số phòng từ HTML và đưa vào JSON batch theo đường load hiện có.
+HTML cũ được bổ sung bằng lệnh local riêng, không qua spider hoặc thay trạng thái
+source. Trước build trên warehouse hiện có, chạy `make -C pipeline building-init`.
+Staging đọc source audit; seed thiếu HTML tiếp tục NULL.
+
+Graph mới có `int_suumo__building_events → int_suumo__building_timeline → dim_building
+→ fct_rental_price_observation`. Fact còn chờ listing/geography/quality/date như
+trước. Chọn `dim_building` dựng lại consumer; chọn analytics dùng dim đã có.
+Refresh manifest bằng `make -C pipeline dbt-airflow-manifest`. Xem
+[building runbook](suumo-buildings.md) cho backfill và kiểm thử. Không deploy VPS.
+
+## Building POI enrichment — local
+
+DAG thay task GSI bằng enrich_buildings_cache: candidates/quality gates → HTTP cache → dim_building → fact/views. Coordinates không fallback chōme; analytics-only reuse dim. Chạy building-location-init và refresh manifest trước bootstrap. Xem [runbook](suumo-building-locations.md).
+
+## MLIT zoning enrichment (local)
+
+Nguồn MLIT có content hash, matching PostGIS EPSG:6668/6674 và publication nguyên tử nằm ngoài SCD2 building/listing. Các view `*_with_zoning` giữ grain và cột gốc. DAG `mlit_zoning_refresh` sở hữu `mlit_zoning_core`; SUUMO dựng input rồi trigger `reuse_source`. Xem [runbook MLIT](mlit-zoning.md) để bootstrap, review/rollback/export và kiểm thử.

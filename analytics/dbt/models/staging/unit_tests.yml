@@ -1,0 +1,113 @@
+version: 2
+
+unit_tests:
+    - name: building_metadata_parser_precedence_and_backfill_match
+      model: stg_suumo_parser_records
+      given:
+          - input: source('warehouse_raw', 'suumo_parser_records')
+            rows:
+                - task_id: 1
+                  source_id: 1
+                  record: '{"SUUMO物件コード":"A","is_valid":true,"data_hash_version":2,"building_name_raw":"NEW　Gate","room_number_raw":"203","building_name_parse_status":"parsed","building_name_source":"h1"}'
+                - task_id: 2
+                  source_id: 1
+                  record: '{"SUUMO物件コード":"B","is_valid":true}'
+                - task_id: 4
+                  source_id: 1
+                  record: '{"SUUMO物件コード":"D","is_valid":true,"data_hash_version":2,"building_name_parse_status":"generic_headline"}'
+                - task_id: 5
+                  source_id: 1
+                  record: '{"SUUMO物件コード":"E","is_valid":true}'
+          - input: ref('suumo_parser_records_seed')
+            rows:
+                - {
+                      task_id: 1,
+                      source_id: 1,
+                      suumo_property_code: wrong_seed_code,
+                      is_valid: true,
+                  }
+                - { task_id: 3, source_id: 1, suumo_property_code: C, is_valid: true }
+          - input: source('warehouse_raw', 'suumo_building_name_backfill')
+            rows:
+                - {
+                      source_id: 1,
+                      task_id: 1,
+                      suumo_property_code: A,
+                      building_name_raw: OLD,
+                      building_name_parse_status: parsed,
+                  }
+                - {
+                      source_id: 1,
+                      task_id: 2,
+                      suumo_property_code: B,
+                      building_name_raw: BACKFILL,
+                      room_number_raw: "204",
+                      building_name_source: h1,
+                      building_name_parse_status: parsed,
+                  }
+                - {
+                      source_id: 1,
+                      task_id: 4,
+                      suumo_property_code: D,
+                      building_name_raw: STALE,
+                      building_name_parse_status: parsed,
+                  }
+                - {
+                      source_id: 1,
+                      task_id: 5,
+                      suumo_property_code: wrong_code,
+                      building_name_raw: WRONG,
+                      building_name_parse_status: parsed,
+                  }
+      expect:
+          rows:
+              - {
+                    task_id: 1,
+                    suumo_property_code: A,
+                    record_origin: operational,
+                    building_name_normalized: newgate,
+                    room_number: "203",
+                    name_source: h1,
+                    name_parse_status: parsed,
+                    data_hash_version: 2,
+                }
+              - {
+                    task_id: 2,
+                    suumo_property_code: B,
+                    record_origin: operational,
+                    building_name_normalized: backfill,
+                    room_number: "204",
+                    name_source: h1,
+                    name_parse_status: parsed,
+                    data_hash_version: 1,
+                }
+              - {
+                    task_id: 3,
+                    suumo_property_code: C,
+                    record_origin: notebook_seed,
+                    building_name_normalized: null,
+                    room_number: null,
+                    name_source: null,
+                    name_parse_status: not_available,
+                    data_hash_version: 1,
+                }
+              - {
+                    task_id: 4,
+                    suumo_property_code: D,
+                    record_origin: operational,
+                    building_name_normalized: null,
+                    room_number: null,
+                    name_source: null,
+                    name_parse_status: generic_headline,
+                    data_hash_version: 2,
+                }
+              - {
+                    task_id: 5,
+                    suumo_property_code: E,
+                    record_origin: operational,
+                    building_name_normalized: null,
+                    room_number: null,
+                    name_source: null,
+                    name_parse_status: not_available,
+                    data_hash_version: 1,
+                }

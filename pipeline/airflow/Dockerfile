@@ -25,4 +25,12 @@ RUN --mount=type=cache,target=/home/airflow/.cache/pip,uid=50000,gid=0 \
     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${AIRFLOW_CONSTRAINT_PYTHON_VERSION}.txt" \
     -r /requirements.txt
 
+# curl_cffi requires cffi>=2; Airflow's bundled Snowflake connector requires <2.
+# Keep the HTTP worker fully isolated instead of changing Airflow constraints.
+COPY pipeline/airflow/building-http-requirements.txt /building-http-requirements.txt
+RUN --mount=type=cache,target=/home/airflow/.cache/pip,uid=50000,gid=0 \
+    python -m venv /opt/airflow/building_http_venv \
+    && /opt/airflow/building_http_venv/bin/pip install --retries 10 --timeout 120 \
+    -r /building-http-requirements.txt
+
 ENV PATH="${PATH}:/opt/airflow/dbt_venv/bin"

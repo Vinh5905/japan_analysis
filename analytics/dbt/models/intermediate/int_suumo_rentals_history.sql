@@ -1,47 +1,101 @@
-{{ config(materialized='table') }}
--- History grain: one row per parser task. The raw JSON remains in raw.suumo_parser_records.
-with joined as (
-    select s.*,
-           d.information_updated_at, d.built_at, d.built_at_precision, d.parsed_at_utc,
-           c.move_in_status, c.move_in_month, c.move_in_period,
-           c.contract_type, c.contract_years, c.contract_months,
-           a.address_raw, a.prefecture, a.district, a.municipality, a.ward, a.locality, a.chome,
-           p.rent_jpy, p.management_fee_jpy, p.deposit_jpy, p.key_money_jpy,
-           p.guarantee_deposit_jpy, p.depreciation_jpy, p.brokerage_fee_jpy,
-           p.brokerage_fee_months, p.brokerage_fee_estimated_jpy,
-           p.other_initial_costs_total_jpy, p.insurance_required,
-           p.insurance_jpy, p.insurance_period_years, p.base_monthly_cost_jpy,
-           l.layout_normalized, l.layout_room_count, l.layout_has_service_room,
-           l.layout_detail_clean, l.layout_detail_parse_status,
-           l.layout_detail_parse_failure_count, l.layout_space_count,
-           l.western_room_count, l.japanese_room_count, l.service_room_count,
-           l.largest_private_room_jo, l.kitchen_type, l.kitchen_size_jo,
-           l.loft_present, l.loft_size_jo, l.flag_layout_detail_parse_failure,
-           b.exclusive_area_m2, b.building_age_years, b.building_age_is_lower_bound,
-           b.floor_min, b.floor_max, b.floor_number, b.building_total_floors,
-           b.total_units_count, b.building_type_clean, b.structure_clean,
-           b.direction_clean, b.flag_floor_exceeds_building,
-           k.parking_listed, k.parking_location, k.parking_distance_m,
-           k.parking_fee_jpy, k.parking_detail, k.parking_max_spaces
-    from {{ ref('stg_suumo_parser_records') }} s
-    left join {{ ref('int_suumo__dates') }} d using (task_id)
-    left join {{ ref('int_suumo__contract') }} c using (task_id)
-    left join {{ ref('int_suumo__address') }} a using (task_id)
-    left join {{ ref('int_suumo__costs') }} p using (task_id)
-    left join {{ ref('int_suumo__layout') }} l using (task_id)
-    left join {{ ref('int_suumo__building') }} b using (task_id)
-    left join {{ ref('int_suumo__parking') }} k using (task_id)
-), calculated as (
-    select j.*,
-           (rent_jpy::numeric / nullif(exclusive_area_m2, 0)) as rent_per_m2_jpy,
-           (rent_jpy is null or exclusive_area_m2 is null) as flag_missing_core
-    from joined j
-), quality as (
-    select c.*,
-           (flag_missing_core::int + flag_floor_exceeds_building::int +
-            flag_layout_detail_parse_failure::int) as quality_issue_count
-    from calculated c
-)
+{{ config(materialized="table") }}
+-- History grain: one row per parser task. The raw JSON remains in
+-- raw.suumo_parser_records.
+with
+    joined as (
+        select
+            s.*,
+            d.information_updated_at,
+            d.built_at,
+            d.built_at_precision,
+            d.parsed_at_utc,
+            c.move_in_status,
+            c.move_in_month,
+            c.move_in_period,
+            c.contract_type,
+            c.contract_years,
+            c.contract_months,
+            a.address_raw,
+            a.prefecture,
+            a.district,
+            a.municipality,
+            a.ward,
+            a.locality,
+            a.chome,
+            p.rent_jpy,
+            p.management_fee_jpy,
+            p.deposit_jpy,
+            p.key_money_jpy,
+            p.guarantee_deposit_jpy,
+            p.depreciation_jpy,
+            p.brokerage_fee_jpy,
+            p.brokerage_fee_months,
+            p.brokerage_fee_estimated_jpy,
+            p.other_initial_costs_total_jpy,
+            p.insurance_required,
+            p.insurance_jpy,
+            p.insurance_period_years,
+            p.base_monthly_cost_jpy,
+            l.layout_normalized,
+            l.layout_room_count,
+            l.layout_has_service_room,
+            l.layout_detail_clean,
+            l.layout_detail_parse_status,
+            l.layout_detail_parse_failure_count,
+            l.layout_space_count,
+            l.western_room_count,
+            l.japanese_room_count,
+            l.service_room_count,
+            l.largest_private_room_jo,
+            l.kitchen_type,
+            l.kitchen_size_jo,
+            l.loft_present,
+            l.loft_size_jo,
+            l.flag_layout_detail_parse_failure,
+            b.exclusive_area_m2,
+            b.building_age_years,
+            b.building_age_is_lower_bound,
+            b.floor_min,
+            b.floor_max,
+            b.floor_number,
+            b.building_total_floors,
+            b.total_units_count,
+            b.building_type_clean,
+            b.structure_clean,
+            b.direction_clean,
+            b.flag_floor_exceeds_building,
+            k.parking_listed,
+            k.parking_location,
+            k.parking_distance_m,
+            k.parking_fee_jpy,
+            k.parking_detail,
+            k.parking_max_spaces
+        from {{ ref("stg_suumo_parser_records") }} s
+        left join {{ ref("int_suumo__dates") }} d using (task_id)
+        left join {{ ref("int_suumo__contract") }} c using (task_id)
+        left join {{ ref("int_suumo__address") }} a using (task_id)
+        left join {{ ref("int_suumo__costs") }} p using (task_id)
+        left join {{ ref("int_suumo__layout") }} l using (task_id)
+        left join {{ ref("int_suumo__building") }} b using (task_id)
+        left join {{ ref("int_suumo__parking") }} k using (task_id)
+    ),
+    calculated as (
+        select
+            j.*,
+            (rent_jpy::numeric / nullif(exclusive_area_m2, 0)) as rent_per_m2_jpy,
+            (rent_jpy is null or exclusive_area_m2 is null) as flag_missing_core
+        from joined j
+    ),
+    quality as (
+        select
+            c.*,
+            (
+                flag_missing_core::int
+                + flag_floor_exceeds_building::int
+                + flag_layout_detail_parse_failure::int
+            ) as quality_issue_count
+        from calculated c
+    )
 select
     batch_id,
     source_id,
@@ -154,5 +208,17 @@ select
     flag_missing_core,
     flag_floor_exceeds_building,
     flag_layout_detail_parse_failure,
-    quality_issue_count
+    quality_issue_count,
+    data_hash_version,
+    listing_headline_raw,
+    building_name_raw,
+    room_number_raw,
+    building_name_source,
+    building_name_parse_status,
+    building_name,
+    building_name_normalized,
+    room_number,
+    name_parse_status,
+    name_source,
+    headline
 from quality

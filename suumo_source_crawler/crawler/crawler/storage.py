@@ -107,7 +107,9 @@ def normalize_task_url(url: str, base_url: str = "https://suumo.jp") -> str:
     parsed_base = urlparse(base_url)
 
     if parsed_url.scheme and parsed_url.netloc == parsed_base.netloc:
-        return urlunparse(("", "", parsed_url.path, parsed_url.params, parsed_url.query, ""))
+        return urlunparse(
+            ("", "", parsed_url.path, parsed_url.params, parsed_url.query, "")
+        )
 
     return url
 
@@ -181,7 +183,9 @@ def build_storage_target(
     )
 
 
-def compress_payload(payload: bytes, compression: str | None = DEFAULT_COMPRESSION) -> bytes:
+def compress_payload(
+    payload: bytes, compression: str | None = DEFAULT_COMPRESSION
+) -> bytes:
     """Compress payload bytes before they are uploaded to MinIO."""
 
     if compression is None:
@@ -292,9 +296,18 @@ def suumo_data_hash(record: Mapping[str, object | None]) -> str:
     """Hash only SUUMO source data fields, excluding generated DB/runtime state."""
 
     stable_payload = {
-        field_name: record.get(field_name)
-        for field_name in SUUMO_DATA_HASH_FIELDS
+        field_name: record.get(field_name) for field_name in SUUMO_DATA_HASH_FIELDS
     }
+    version = record.get("data_hash_version", 1)
+    if version not in (1, 2):
+        raise ValueError(f"Unsupported data hash version: {version}")
+    if version == 2:
+        stable_payload.update(
+            {
+                field: record.get(field)
+                for field in ("building_name_raw", "room_number_raw")
+            }
+        )
     encoded_payload = json.dumps(
         stable_payload,
         ensure_ascii=False,

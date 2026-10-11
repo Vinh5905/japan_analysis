@@ -7,13 +7,18 @@ from pathlib import Path
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowSkipException
 from airflow.models.param import Param
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from dbt_airflow.graph import GraphBuilder
 from dbt_airflow.manifest import assert_fresh, load_manifest
 from dbt_airflow.selection import Selection, batch_failures, execution_failures
-from loaders.suumo_batch_loader import load_pending_batches, load_warehouse_postgres_config, postgres_connection
-from loaders.suumo_geocoder import enrich_geographies
+from loaders.suumo_batch_loader import (
+    load_pending_batches,
+    load_warehouse_postgres_config,
+    postgres_connection,
+)
+from loaders.suumo_building_locator import enrich_buildings
 
 PROJECT = Path(os.getenv("DBT_PROJECT_DIR", "/opt/airflow/dbt"))
 MANIFEST = load_manifest(PROJECT)
@@ -34,12 +39,22 @@ def _batch_ids_from_conf(conf):
 
 
 @dag(
-    dag_id="suumo_load_to_warehouse", start_date=datetime(2026, 1, 1),
-    schedule=os.getenv("SUUMO_LOAD_DAG_SCHEDULE", "0 */3 * * *"), catchup=False,
-    max_active_runs=1, max_active_tasks=int(os.getenv("SUUMO_DBT_CONCURRENCY", "4")),
-    default_args={"retries": 0}, tags=["suumo", "warehouse", "dbt"],
-    params={"mode": Param("load_and_transform", enum=["load_and_transform", "dbt_only"]),
-            "model": Param(None, type=["null", "string"], description="Exact enabled model name; dbt_only only")},
+    dag_id="suumo_load_to_warehouse",
+    start_date=datetime(2026, 1, 1),
+    schedule=os.getenv("SUUMO_LOAD_DAG_SCHEDULE", "0 */3 * * *"),
+    catchup=False,
+    max_active_runs=1,
+    max_active_tasks=int(os.getenv("SUUMO_DBT_CONCURRENCY", "4")),
+    default_args={"retries": 0},
+    tags=["suumo", "warehouse", "dbt"],
+    params={
+        "mode": Param("load_and_transform", enum=["load_and_transform", "dbt_only"]),
+        "model": Param(
+            None,
+            type=["null", "string"],
+            description="Exact enabled model name; dbt_only only",
+        ),
+    },
 )
 def suumo_load_to_warehouse():
     @task
@@ -49,7 +64,10 @@ def suumo_load_to_warehouse():
         assert_fresh(PROJECT, MANIFEST["_airflow"]["fingerprint"])
         if mode == "dbt_only":
             return {"loaded_batch_ids": [], "results": []}
-        return load_pending_batches(batch_ids=_batch_ids_from_conf(conf), limit=int(os.getenv("SUUMO_LOAD_BATCH_LIMIT", "20")))
+        return load_pending_batches(
+            batch_ids=_batch_ids_from_conf(conf),
+            limit=int(os.getenv("SUUMO_LOAD_BATCH_LIMIT", "20")),
+        )
 
     @task(trigger_rule=TriggerRule.NONE_FAILED)
     def prepare_transform(**context):
@@ -67,10 +85,21 @@ def suumo_load_to_warehouse():
                     if cursor.fetchone()[0] is None:
                         missing.append(f"{uid}: {relation}")
         if missing:
-            raise RuntimeError("Missing reused upstream relations; bootstrap/build upstream first: " + "; ".join(missing))
+            raise RuntimeError(
+                "Missing reused upstream relations; bootstrap/build upstream first: "
+                + "; ".join(missing)
+            )
         tests = {uid for uid in GRAPH.tests if GRAPH.test_is_selected(uid, selected)}
-        units = {uid for uid, node in GRAPH.units.items() if GRAPH.names[node["model"]] in selected}
-        reused = {uid for uid, node in GRAPH.nodes.items() if node["resource_type"] in {"source", "seed"}}
+        units = {
+            uid
+            for uid, node in GRAPH.units.items()
+            if GRAPH.names[node["model"]] in selected
+        }
+        reused = {
+            uid
+            for uid, node in GRAPH.nodes.items()
+            if node["resource_type"] in {"source", "seed"}
+        }
         return {"execute_ids": sorted(selected | tests | units | reused)}
 
     @task(trigger_rule=TriggerRule.ALL_DONE)
@@ -79,16 +108,23 @@ def suumo_load_to_warehouse():
         failed_batches = batch_failures(summary)
         failed_tasks = execution_failures(context["dag_run"].get_task_instances())
         if failed_batches or failed_tasks:
-            raise RuntimeError(f"Failed batch IDs: {failed_batches}; failed/upstream_failed tasks: {failed_tasks}")
+            raise RuntimeError(
+                f"Failed batch IDs: {failed_batches}; failed/upstream_failed tasks: {failed_tasks}"
+            )
 
     @task(trigger_rule=TriggerRule.NONE_FAILED)
-    def enrich_geographies_cache(**context):
+    def enrich_buildings_cache(**context):
         assert_fresh(PROJECT, MANIFEST["_airflow"]["fingerprint"])
         selection = context["ti"].xcom_pull(task_ids="prepare_transform")
-        enabled = {GRAPH.names['dim_geography'], GRAPH.names['stg_suumo__address_geocodes']}
-        if not selection or not enabled.intersection(selection['execute_ids']):
-            raise AirflowSkipException("No selected geography build; reuse existing dimension/cache")
-        return enrich_geographies()
+        enabled = {
+            GRAPH.names["dim_building"],
+            GRAPH.names["stg_suumo__building_locations"],
+        }
+        if not selection or not enabled.intersection(selection["execute_ids"]):
+            raise AirflowSkipException(
+                "No selected building build; reuse existing dimension/cache"
+            )
+        return enrich_buildings()
 
     loader = load_batches()
     prepare = prepare_transform()
@@ -96,9 +132,41 @@ def suumo_load_to_warehouse():
     builder = GraphBuilder(MANIFEST, PROJECT)
     transform = builder.build(prepare.operator.dag)
     prepare >> transform
-    enrichment = enrich_geographies_cache()
+    enrichment = enrich_buildings_cache()
     prepare >> enrichment
-    builder.gate_geocoding(enrichment.operator)
+    builder.gate_building_locations(enrichment.operator)
+
+    @task(trigger_rule=TriggerRule.NONE_FAILED)
+    def prepare_zoning_refresh(**context):
+        selection = context["ti"].xcom_pull(task_ids="prepare_transform") or {}
+        enabled = {
+            GRAPH.names[name]
+            for name in (
+                "int_suumo__zoning_inputs",
+                "dim_building",
+                "stg_suumo__building_locations",
+            )
+        }
+        if not enabled.intersection(selection.get("execute_ids", [])):
+            raise AirflowSkipException(
+                "Analytics branch reuses the current zoning publication"
+            )
+        return {"mode": "reuse_source"}
+
+    zoning_choice = prepare_zoning_refresh()
+    prepare >> zoning_choice
+    zoning_refresh = TriggerDagRunOperator(
+        task_id="refresh_zoning_publication",
+        trigger_dag_id="mlit_zoning_refresh",
+        conf={"mode": "reuse_source"},
+        wait_for_completion=True,
+        poke_interval=20,
+        allowed_states=["success"],
+        failed_states=["failed"],
+        retries=0,
+    )
+    zoning_choice >> zoning_refresh
+    builder.gate_zoning_publication(zoning_choice.operator, zoning_refresh)
     report = report_batch_failures()
     # All tasks must be terminal, including a loader that returned no summary.
     for operator in list(report.operator.dag.tasks):

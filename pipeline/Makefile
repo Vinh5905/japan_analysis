@@ -37,7 +37,7 @@ config: ## Validate and render Airflow/dbt pipeline compose config
 
 .PHONY: build
 build: ## Build the local Airflow image with dbt and loader dependencies
-	$(COMPOSE_CMD) --profile build build airflow-image
+	$(COMPOSE_CMD) --profile build build airflow-image warehouse-postgres
 
 .PHONY: up-d
 up-d: dbt-airflow-manifest ## Build image, then start warehouse Postgres, Airflow webserver, and scheduler
@@ -177,3 +177,48 @@ geocode: ## Enrich addresses from existing dbt mart observations; pass opts="--d
 
 geocode-test: ## Run fixture-based Python geocoder and notebook parity tests (no HTTP)
 	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_suumo_geocoder.py' -v
+
+.PHONY: building-backfill building-init building-test
+building-init: ## Create the building-name audit source, preserving existing data
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_building_backfill --init-only
+
+building-backfill: ## Backfill existing HTML names locally; pass opts="--dry-run --limit 5"
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_building_backfill $(opts)
+
+building-test: ## Run building extraction and backfill regression tests without crawling
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_suumo_building*.py' -v
+
+.PHONY: building-location-init building-location building-location-test
+building-location-init: ## Create building POI cache without HTTP; preserve existing warehouse data
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_building_locator --init-only
+
+building-location: ## Lookup new/due building candidates; opts="--dry-run" or "--limit 5"
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.suumo_building_locator $(opts)
+
+building-location-test: ## Test HTTP fixtures, matching and cache without live requests
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_suumo_building_locator.py' -v
+
+.PHONY: building-location-verify building-location-cache-test
+building-location-verify: ## Verify protected baseline and export coverage; opts="--capture-baseline" before migration
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image /opt/airflow/pipeline/tests/verify_building_locations_warehouse.py $(opts)
+
+building-location-cache-test: ## Real PostgreSQL cache fixtures, no HTTP; rolls back every write
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image /opt/airflow/pipeline/tests/integration_building_locations_cache.py
+
+.PHONY: mlit-init mlit-refresh mlit-test mlit-verify mlit-publication
+mlit-init: ## Create PostGIS/MLIT raw and operational tables, preserving warehouse data
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.mlit_zoning_loader --init-only
+
+mlit-refresh: ## Check official MLIT ZIP/XLSX and import raw; opts="--dry-run" makes no requests/writes
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.mlit_zoning_loader $(opts)
+
+mlit-publication: ## Review/publish/rollback/export a run; pass opts="check --run-id ..."
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m loaders.mlit_zoning_publication $(opts)
+
+mlit-test: ## HTTP/archive fixtures, graph tests and transactional PostGIS/publication fixtures
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image -m unittest discover -s /opt/airflow/pipeline/tests -p 'test_mlit_zoning*.py' -v
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image /opt/airflow/pipeline/tests/integration_mlit_zoning.py
+
+mlit-verify: ## Check baseline/grain and export building/observation coverage locally
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image /opt/airflow/pipeline/tests/verify_mlit_zoning_warehouse.py
+	$(COMPOSE_CMD) --profile build run --rm --no-deps --entrypoint python airflow-image /opt/airflow/pipeline/tests/verify_mlit_zoning_storage.py

@@ -1,4 +1,3 @@
-
 # Japan Analysis - Agent Context
 
 ## Mục tiêu hiện tại
@@ -190,12 +189,12 @@ Chưa deploy thay đổi này lên VPS.
 
 ## Services
 
-| Service        | Image/Build                                  | Port local         | Vai trò                                                        |
-| -------------- | -------------------------------------------- | ------------------ | --------------------------------------------------------------- |
-| `postgres`   | `postgres:16.3-bookworm`                   | `5432`           | Database cho metadata, structured records, crawler run tracking |
-| `minio`      | `minio/minio:RELEASE.2024-07-16T23-46-41Z` | `9000`, `9001` | Object storage và MinIO Console UI                             |
-| `minio-init` | `minio/mc:RELEASE.2024-07-15T17-46-06Z`    | none               | One-shot job tạo buckets                                       |
-| `python`     | build từ`suumo_source_crawler/Dockerfile` | `8000`           | Runtime cho crawler/ETL SUUMO                                   |
+| Service      | Image/Build                                | Port local     | Vai trò                                                         |
+| ------------ | ------------------------------------------ | -------------- | --------------------------------------------------------------- |
+| `postgres`   | `postgres:16.3-bookworm`                   | `5432`         | Database cho metadata, structured records, crawler run tracking |
+| `minio`      | `minio/minio:RELEASE.2024-07-16T23-46-41Z` | `9000`, `9001` | Object storage và MinIO Console UI                              |
+| `minio-init` | `minio/mc:RELEASE.2024-07-15T17-46-06Z`    | none           | One-shot job tạo buckets                                        |
+| `python`     | build từ`suumo_source_crawler/Dockerfile`  | `8000`         | Runtime cho crawler/ETL SUUMO                                   |
 
 MinIO UI chạy qua MinIO Console tại `http://localhost:9001`.
 
@@ -288,10 +287,12 @@ Docker Compose tự động đọc file `.env` nằm cùng thư mục với `doc
 
 Nếu cần inject toàn bộ biến `.env` vào runtime container ngoài các biến đã khai báo trong `environment`, có thể thêm `env_file: .env` cho service tương ứng. Hiện tại compose chỉ truyền các biến cần thiết một cách tường minh để tránh đưa thừa cấu hình vào container.
 
-
-## Geocoding chōme — 2026-10-08
+## Geocoding chōme — 2026-10-08 (legacy từ 2026-10-10)
 
 Notebook `03_geocode_addresses.ipynb` self-contained bổ sung điểm GSI theo địa chỉ chōme, cache/output local riêng. Loader `pipeline/loaders/suumo_geocoder.py` quản lý source cache `raw.suumo_address_geocodes`; tạo source bằng `make -C pipeline geocode-init` trước khi chạy DAG trên warehouse đã tồn tại. Cosmos gate `enrich_geographies_cache` chờ mart observations và address-side quality tests, rồi cho source cache/staging/dim geography chạy. Nhánh analytics-only không gọi HTTP. Tọa độ ở dim, fact dùng FK geography_key giữ nguyên; views history/latest có tọa độ. Không sửa charts. Xem `docs/suumo-geocoding.md`. Test graph lấy số node từ manifest thay vì hardcode số cũ.
+
+Đoạn trên mô tả thiết kế lịch sử. DAG hiện thay GSI bằng building locator;
+cache/cột dim geography giữ legacy, views lấy tọa độ building và không fallback.
 
 ## Telegram control — bổ sung local 2026-10-09
 
@@ -300,3 +301,66 @@ Notebook `03_geocode_addresses.ipynb` self-contained bổ sung điểm GSI theo 
 - Preflight tạo mã lượt trước VPN; runner truyền manual riêng vào image. Tin HTML có icon/tiêu đề đậm, escape/redact/giới hạn; summary toàn pipeline gửi sau cleanup xác nhận VPN đã tắt. Lỗi SQLite không bỏ qua cleanup VPN.
 - History/total đọc `crawl_runs` cùng source qua container postgres/psql; tổng là SUM(total_urls), bao gồm lỗi/rerun/đang chạy. Lịch lấy systemd live qua systemctl/busctl/timedatectl.
 - 79 test offline đạt; 2 test SQL PostgreSQL opt-in chưa chạy vì Docker local chưa hoạt động. Chưa kết nối VPS hoặc bật bot thật; cần image tag mới cùng bundle để phát hành. Xem [runbook Telegram](telegram-crawler-control.md).
+
+## Building names và dim building — local 2026-10-10
+
+- Helper `crawler/building_identity.py` dùng chung spider/backfill, lấy tên từ H1
+  hoặc title SUUMO, tách số phòng rõ ràng, giữ wing suffix. JSON mới thêm tên,
+  số phòng, heading/source/status và hash version 2; hash v1 lịch sử giữ nguyên.
+- `pipeline/loaders/suumo_building_backfill.py` đọc HTML MinIO/source metadata
+  local, ghi source audit `raw.suumo_building_name_backfill` theo source/task;
+  có dry-run/limit/force, content hash kiểm chứng, không sửa raw/batch/timestamp
+  hoặc crawl status. Bootstrap/migration idempotent: `make -C pipeline building-init`.
+- dbt có building events/timeline, `dim_building` SCD2 theo source update date
+  (fallback parsed time; tie observed time/task), carry-forward nonnull riêng
+  từng candidate, fact map theo task. Tên chuẩn hóa + chōme geography là candidate;
+  thiếu thông tin thì placeholder riêng theo source/listing. Room/lease ở
+  dim_rental_listing, tuổi tòa ở fact; geography key/coordinates giữ nguyên.
+- 19/19 HTML thật qua parser record/JSON, 4 named candidates, 5 số phòng; seed
+  chưa có HTML vẫn NULL. Warehouse 17.946 observations/17.395 latest/87 geography;
+  price/history/geography/raw fingerprints không đổi. Building 17.390 versions/
+  17.384 identities (17.380 unresolved placeholders); 5 conflicting observations.
+  Listing versions 17.415→17.417: ba bổ sung room + một bỏ building-only version.
+- Build staging/downstream đạt 127 nodes; consumer rebuild và scenario tests đạt.
+  Fixture staging mới kiểm tra ưu tiên parser v2, audit khớp code và seed NULL.
+  Rebuild 11 mart relations ổn định rows/keys; rerun backfill 19 cache hit, không
+  đọc HTML. Integration backfill xác nhận source/audit không đổi khi cache/dry-run/
+  failed refresh và code/warehouse errors fail. Manifest Cosmos refresh; 7 graph
+  tests đạt, gồm building trước fact, no cycle, partial selection, geography gate.
+- Runbook + báo cáo: `docs/suumo-buildings.md`, ignored artifacts ở
+  `pipeline/tmp/building_qa/`. Không sửa charts, Google Maps/zoning/FAR hoặc VPS.
+
+## Building location enrichment — local 2026-10-10
+
+- `pipeline/vendor/google_maps` khóa MIT commit
+  `3d01d6c5ee23cc5a0dcf088b6d379fb107a51908`, chỉ dùng query/parser có LICENSE.
+  HTTP worker chạy curl_cffi 0.16.3 trong venv riêng để tránh xung đột cffi với
+  Airflow/Snowflake; TLS verify bật, ja/jp, không browser/proxy pool.
+- `suumo_building_locator.py` đọc dbt candidate key, exact normalized name +
+  chōme + block/house number + unique Place ID/point; không nhận chōme-only.
+  Raw cache có audit refresh riêng, cooldown SQL mọi rule versions, advisory
+  lock một provider worker, 3 giây/request, tối đa 30 lookup mới/due mỗi lượt.
+- `dim_building` thêm địa chỉ chi tiết, postal/block/house, building POI và
+  matching metadata. Không thêm vào SCD2/hash; fact giữ building version FK.
+  History/latest chuyển tọa độ sang building, giữ NULL nếu thiếu tên/không
+  khớp. GSI cache/dim geography giữ legacy, task GSI đã bỏ khỏi DAG.
+- Lookup thật qua DAG dbt_only building: 4 request, matched 4/4 named candidates.
+  Repeat DAG: 4 cache hit, 0 HTTP. Cả hai đạt 83 node; analytics-only đạt 44 node,
+  enrichment skipped. Không thay đổi fingerprint các relation sau repeat.
+- Baseline: 17.946 observations, 17.417 listing versions, 17.390 building
+  versions và 87 geography giữ nguyên; toàn bộ fact/raw/listing/geography,
+  cột building SCD2 và lịch sử giá không đổi. 19 observation có tên nhận điểm;
+  17.927 thiếu tên giữ NULL (coverage toàn bộ 0,1059%, eligible 100%).
+- Image Linux build thành công; pip check không xung đột; 13 fixture tests,
+  7 graph tests và 70 dbt data/unit tests ở nhánh mới đạt. SQL cache QA kiểm
+  chứng upsert, failed refresh, provider lock/cooldown và constraints, rollback
+  toàn bộ fixture. API lỗi không làm fail mart; lỗi code/warehouse fail task.
+- Runbook `docs/suumo-building-locations.md`; báo cáo/các hàng mẫu/baseline ở
+  `analytics/dbt/target/building_locations/`; QA DAG ở `target/airflow/qa/`.
+  Không sửa charts, zoning/FAR, source crawler state hoặc truy cập VPS.
+- No-batch QA success, 0 dbt node, enrichment skipped. Local webserver/scheduler
+  đã recreate trên image mới và healthy; dbt docs khôi phục sau QA.
+
+## MLIT zoning enrichment (local)
+
+Nguồn MLIT có content hash, matching PostGIS EPSG:6668/6674 và publication nguyên tử nằm ngoài SCD2 building/listing. Các view `*_with_zoning` giữ grain và cột gốc. DAG `mlit_zoning_refresh` sở hữu `mlit_zoning_core`; SUUMO dựng input rồi trigger `reuse_source`. Xem [runbook MLIT](mlit-zoning.md) để bootstrap, review/rollback/export và kiểm thử.

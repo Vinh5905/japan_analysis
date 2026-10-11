@@ -9,12 +9,17 @@ import scrapy
 from scrapy import signals
 from scrapy.http import TextResponse
 
+from crawler.building_identity import BUILDING_RECORD_FIELDS, extract_building_identity
 from crawler.airflow_notify import (
     load_airflow_notify_config,
     notify_airflow_batch_ready,
 )
 from crawler.metadata_db import CrawlerMetadataRepository, PendingParseTask
-from crawler.object_storage import create_minio_client, load_minio_config, split_storage_path
+from crawler.object_storage import (
+    create_minio_client,
+    load_minio_config,
+    split_storage_path,
+)
 from crawler.storage import (
     SUUMO_DATA_HASH_FIELDS,
     build_batch_target,
@@ -33,6 +38,8 @@ PARSER_RECORD_FIELD_NAMES = (
     "image_public_url",
     "image_storage_path",
     *SUUMO_SOURCE_FIELD_NAMES,
+    *BUILDING_RECORD_FIELDS,
+    "data_hash_version",
     "data_hash",
     "parsed_at",
     "is_valid",
@@ -91,7 +98,9 @@ class SuumoPageSpider(scrapy.Spider):
         spider.batch_size = crawler.settings.getint("SUUMO_PAGE_BATCH_SIZE", 100)
         spider.batch_seconds = crawler.settings.getint("SUUMO_PAGE_BATCH_SECONDS", 300)
         spider.source_id = crawler.settings.getint("SUUMO_SOURCE_ID", 1)
-        spider.source_base_url = crawler.settings.get("SUUMO_SOURCE_BASE_URL", "https://suumo.jp")
+        spider.source_base_url = crawler.settings.get(
+            "SUUMO_SOURCE_BASE_URL", "https://suumo.jp"
+        )
         crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
         crawler.signals.connect(spider.close_spider, signal=signals.spider_closed)
         return spider
@@ -126,10 +135,14 @@ class SuumoPageSpider(scrapy.Spider):
         metadata_repository = self.require_metadata_repository()
         pending_tasks = metadata_repository.fetch_pending_parse_tasks(
             limit=self.task_limit,
-            run_id=int(os.environ["SUUMO_RUN_ID"]) if os.environ.get("SUUMO_RUN_ID") else None,
+            run_id=int(os.environ["SUUMO_RUN_ID"])
+            if os.environ.get("SUUMO_RUN_ID")
+            else None,
         )
         if not pending_tasks:
-            self.logger.warning("No pending SUUMO crawl_tasks found for parser batching")
+            self.logger.warning(
+                "No pending SUUMO crawl_tasks found for parser batching"
+            )
             return
 
         self.logger.info(
@@ -143,12 +156,18 @@ class SuumoPageSpider(scrapy.Spider):
 
             if self.should_flush_batch():
                 summary = self.flush_batch(reason="threshold")
-                print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+                print(
+                    json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True),
+                    flush=True,
+                )
                 yield summary
 
         if self.batch_records:
             summary = self.flush_batch(reason="finished")
-            print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+            print(
+                json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True),
+                flush=True,
+            )
             yield summary
 
     def ensure_bucket(self) -> None:
@@ -202,10 +221,10 @@ class SuumoPageSpider(scrapy.Spider):
             encoding="utf-8",
         )
 
-    def extract_page_data(self, response) -> dict[str, str]:
+    def extract_page_data(self, response) -> dict[str, str | None]:
         """Extract price, phone, building, and room data from one detail response."""
 
-        data: dict[str, str] = {}
+        data = extract_building_identity(response.text)
 
         renting_price = safe_extract(response.css(".property_view_note-emphasis"))
         others_price_container = response.css(
@@ -213,8 +232,7 @@ class SuumoPageSpider(scrapy.Spider):
             ".property_view_note-list span[class='']"
         )
         others_price_data = self.extract_key_value_texts(
-            safe_extract(price).replace("\xa0", "")
-            for price in others_price_container
+            safe_extract(price).replace("\xa0", "") for price in others_price_container
         )
         data.update(
             {
@@ -237,7 +255,7 @@ class SuumoPageSpider(scrapy.Spider):
     def build_parser_record(
         self,
         task_id: int,
-        extracted_data: dict[str, str],
+        extracted_data: dict[str, str | None],
     ) -> dict[str, object | None]:
         """Build a fixed-shape JSON parser record from extracted page data."""
 
@@ -246,7 +264,9 @@ class SuumoPageSpider(scrapy.Spider):
             if key in record:
                 record[key] = null_if_empty(value)
             else:
-                self.logger.debug("Ignoring extracted SUUMO field outside schema: %s", key)
+                self.logger.debug(
+                    "Ignoring extracted SUUMO field outside schema: %s", key
+                )
 
         is_valid, error_type, error_message = self.validate_parser_record(record)
         record["is_valid"] = is_valid
@@ -278,6 +298,7 @@ class SuumoPageSpider(scrapy.Spider):
         record["task_id"] = task_id
         record["parsed_at"] = datetime.now(timezone.utc).isoformat()
         record["is_valid"] = False
+        record["data_hash_version"] = 2
         return record
 
     def validate_parser_record(
@@ -287,8 +308,7 @@ class SuumoPageSpider(scrapy.Spider):
         """Validate the minimum fields needed before loader receives a record."""
 
         extracted_source_values = [
-            record.get(field_name)
-            for field_name in SUUMO_SOURCE_FIELD_NAMES
+            record.get(field_name) for field_name in SUUMO_SOURCE_FIELD_NAMES
         ]
         if not any(extracted_source_values):
             return False, "ValidationError", "No SUUMO detail fields extracted"
@@ -324,7 +344,11 @@ class SuumoPageSpider(scrapy.Spider):
 
         metadata_repository = self.require_metadata_repository()
         records = list(self.batch_records)
-        task_ids = [int(record["task_id"]) for record in records if record["task_id"] is not None]
+        task_ids = [
+            int(record["task_id"])
+            for record in records
+            if record["task_id"] is not None
+        ]
         if not task_ids:
             raise ValueError("Buffered parser records do not contain task_id values")
 
@@ -372,7 +396,9 @@ class SuumoPageSpider(scrapy.Spider):
             "compression": stored_object.compression,
             "row_count": len(records),
             "valid_count": sum(record.get("is_valid") is True for record in records),
-            "invalid_count": sum(record.get("is_valid") is not True for record in records),
+            "invalid_count": sum(
+                record.get("is_valid") is not True for record in records
+            ),
             "file_hash": stored_object.stored_hash,
             "stored_length": stored_object.stored_length,
             "task_ids": task_ids,
@@ -405,9 +431,7 @@ class SuumoPageSpider(scrapy.Spider):
         titles = [safe_extract(th) for th in table_selector.css("th")]
         values = [safe_extract(td) for td in table_selector.css("td")]
         return {
-            title: value
-            for title, value in zip(titles, values, strict=False)
-            if title
+            title: value for title, value in zip(titles, values, strict=False) if title
         }
 
     def extract_key_value_texts(self, raw_values) -> dict[str, str]:

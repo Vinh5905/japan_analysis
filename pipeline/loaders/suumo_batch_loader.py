@@ -300,7 +300,9 @@ def read_minio_batch(batch: SourceBatch) -> list[Any]:
     return records
 
 
-def validate_batch_records(records: list[Any]) -> tuple[list[tuple[int, str, dict]], int]:
+def validate_batch_records(
+    records: list[Any],
+) -> tuple[list[tuple[int, str, dict]], int]:
     """Validate every record before writing any warehouse row."""
 
     valid_records = []
@@ -321,8 +323,10 @@ def validate_batch_records(records: list[Any]) -> tuple[list[tuple[int, str, dic
             failed_count += 1
             continue
         data_hash = record.get("data_hash")
-        if not isinstance(data_hash, str) or len(data_hash) != 64 or any(
-            character not in "0123456789abcdef" for character in data_hash
+        if (
+            not isinstance(data_hash, str)
+            or len(data_hash) != 64
+            or any(character not in "0123456789abcdef" for character in data_hash)
         ):
             raise ValueError(f"Record {index} has invalid data_hash")
         valid_records.append((task_id, data_hash, record))
@@ -356,8 +360,14 @@ def load_records_to_warehouse(batch: SourceBatch, records: list[Any]) -> dict[st
                             loaded_at = EXCLUDED.loaded_at,
                             updated_at = now()
                         """,
-                        (task_id, batch.batch_id, batch.source_id, data_hash,
-                         Jsonb(record), loaded_at),
+                        (
+                            task_id,
+                            batch.batch_id,
+                            batch.source_id,
+                            data_hash,
+                            Jsonb(record),
+                            loaded_at,
+                        ),
                     )
 
     return {

@@ -25,19 +25,19 @@ database mới. Database đã tồn tại dùng các SQL migration trong
 
 ### `robots_policy_enum`
 
-| Giá trị | Khi sử dụng |
-| --- | --- |
-| `allowed` | Source được crawl bình thường. SUUMO hiện dùng giá trị này. |
-| `disallowed` | Source không được crawl. |
-| `limited` | Source được crawl nhưng phải có giới hạn như delay, concurrency thấp, hoặc scope cố định. |
+| Giá trị          | Khi sử dụng                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `allowed`        | Source được crawl bình thường. SUUMO hiện dùng giá trị này.                                   |
+| `disallowed`     | Source không được crawl.                                                                      |
+| `limited`        | Source được crawl nhưng phải có giới hạn như delay, concurrency thấp, hoặc scope cố định.     |
 | `not_applicable` | Không áp dụng robots policy, ví dụ API, private source, hoặc nguồn không phải website public. |
 
 ### `run_created_by_enum`
 
-| Giá trị | Khi sử dụng |
-| --- | --- |
+| Giá trị    | Khi sử dụng                                              |
+| ---------- | -------------------------------------------------------- |
 | `schedule` | Run tạo bởi lịch chạy tự động. Đây là mặc định hiện tại. |
-| `manual` | Run tạo thủ công bởi người vận hành. |
+| `manual`   | Run tạo thủ công bởi người vận hành.                     |
 
 ### `http_method_enum`
 
@@ -46,18 +46,18 @@ Các method hiện hỗ trợ: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`,
 
 ### `crawl_task_status_enum`
 
-| Giá trị | Khi sử dụng |
-| --- | --- |
-| `failed` | Task đang retry hoặc đã retry hết nhưng vẫn không fetch/lưu raw được. `fetched_at` để null khi chưa lưu MinIO thành công. |
-| `cancelled` | Task đã được kiểm tra manual và xác định không thể hoặc không nên xử lý tiếp. |
-| `pending` | HTML/JSON đã fetch xong và raw payload đã lưu MinIO thành công. Task đang chờ parser spider xử lý. |
-| `success` | Parser đã tạo record hợp lệ và task đã hoàn tất. |
+| Giá trị     | Khi sử dụng                                                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `failed`    | Task đang retry hoặc đã retry hết nhưng vẫn không fetch/lưu raw được. `fetched_at` để null khi chưa lưu MinIO thành công. |
+| `cancelled` | Task đã được kiểm tra manual và xác định không thể hoặc không nên xử lý tiếp.                                             |
+| `pending`   | HTML/JSON đã fetch xong và raw payload đã lưu MinIO thành công. Task đang chờ parser spider xử lý.                        |
+| `success`   | Parser đã tạo record hợp lệ và task đã hoàn tất.                                                                          |
 
 ### `raw_content_type_enum`
 
-| Giá trị | Khi sử dụng |
-| --- | --- |
-| `text/html` | Raw payload là HTML. |
+| Giá trị            | Khi sử dụng          |
+| ------------------ | -------------------- |
+| `text/html`        | Raw payload là HTML. |
 | `application/json` | Raw payload là JSON. |
 
 Nếu response header có charset, code chỉ lưu media type vào `content_type`; charset
@@ -65,54 +65,54 @@ Nếu response header có charset, code chỉ lưu media type vào `content_type
 
 ### `load_batch_status_enum`
 
-| Giá trị | Khi sử dụng |
-| --- | --- |
+| Giá trị   | Khi sử dụng                                                                                |
+| --------- | ------------------------------------------------------------------------------------------ |
 | `pending` | File batch đã được tạo, nén, upload lên `suumo/data`, và metadata file đã được ghi vào DB. |
-| `loading` | Loader đang đọc batch file để ghi vào bảng đích. |
-| `success` | Load hoàn tất thành công. `loaded_at` phải có giá trị. |
-| `failed` | Load bị lỗi. `finished_loading_at` phải có giá trị, `loaded_at` để null. |
+| `loading` | Loader đang đọc batch file để ghi vào bảng đích.                                           |
+| `success` | Load hoàn tất thành công. `loaded_at` phải có giá trị.                                     |
+| `failed`  | Load bị lỗi. `finished_loading_at` phải có giá trị, `loaded_at` để null.                   |
 
 ## Bảng `config`
 
 Bảng singleton lưu cấu hình runtime chung.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `config_id` | `SMALLINT` | Primary key, luôn là `1`. |
-| `max_retries` | `INTEGER` | Số lần retry tối đa cho crawl/fetch task. Mặc định `10`. |
-| `created_at` | `TIMESTAMPTZ` | Thời điểm tạo config. |
-| `updated_at` | `TIMESTAMPTZ` | Thời điểm cập nhật config gần nhất. |
+| Cột           | Type          | Mô tả                                                    |
+| ------------- | ------------- | -------------------------------------------------------- |
+| `config_id`   | `SMALLINT`    | Primary key, luôn là `1`.                                |
+| `max_retries` | `INTEGER`     | Số lần retry tối đa cho crawl/fetch task. Mặc định `10`. |
+| `created_at`  | `TIMESTAMPTZ` | Thời điểm tạo config.                                    |
+| `updated_at`  | `TIMESTAMPTZ` | Thời điểm cập nhật config gần nhất.                      |
 
 ## Bảng `crawl_sources`
 
 Lưu danh sách source crawler.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `source_id` | `BIGSERIAL` | Primary key của source. |
-| `source_key` | `TEXT` | Key ổn định cho code, ví dụ `suumo`. Unique. |
-| `source_name` | `TEXT` | Tên hiển thị của source. |
-| `base_url` | `TEXT` | Base URL dùng để normalize URL task. |
-| `crawl_frequency` | `TEXT` | Mô tả nhịp crawl hiện tại, ví dụ `schedule`. |
-| `is_active` | `BOOLEAN` | Source còn được phép chạy hay không. |
-| `robots_policy` | `robots_policy_enum` | Chính sách crawl của source. Mặc định `allowed`. |
-| `notes` | `TEXT` | Ghi chú vận hành, có thể `NULL`. SUUMO mặc định để `NULL`. |
-| `created_at` | `TIMESTAMPTZ` | Thời điểm tạo source. |
-| `updated_at` | `TIMESTAMPTZ` | Thời điểm cập nhật source gần nhất. |
+| Cột               | Type                 | Mô tả                                                      |
+| ----------------- | -------------------- | ---------------------------------------------------------- |
+| `source_id`       | `BIGSERIAL`          | Primary key của source.                                    |
+| `source_key`      | `TEXT`               | Key ổn định cho code, ví dụ `suumo`. Unique.               |
+| `source_name`     | `TEXT`               | Tên hiển thị của source.                                   |
+| `base_url`        | `TEXT`               | Base URL dùng để normalize URL task.                       |
+| `crawl_frequency` | `TEXT`               | Mô tả nhịp crawl hiện tại, ví dụ `schedule`.               |
+| `is_active`       | `BOOLEAN`            | Source còn được phép chạy hay không.                       |
+| `robots_policy`   | `robots_policy_enum` | Chính sách crawl của source. Mặc định `allowed`.           |
+| `notes`           | `TEXT`               | Ghi chú vận hành, có thể `NULL`. SUUMO mặc định để `NULL`. |
+| `created_at`      | `TIMESTAMPTZ`        | Thời điểm tạo source.                                      |
+| `updated_at`      | `TIMESTAMPTZ`        | Thời điểm cập nhật source gần nhất.                        |
 
 ## Bảng `crawl_runs`
 
 Mỗi lần chạy spider `suumo_html` tạo một row trong bảng này ngay khi spider mở.
 Run không lưu status riêng; trạng thái từng URL nằm trong `crawl_tasks.status`.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `run_id` | `BIGSERIAL` | Primary key của run. |
-| `source_id` | `BIGINT` | FK tới `crawl_sources.source_id`. Mặc định `1` cho SUUMO. |
-| `finished_at` | `TIMESTAMPTZ` | Lưu khi run kết thúc, dù thành công, lỗi, bị dừng, hoặc hết URL. |
-| `total_urls` | `INTEGER` | Mặc định `0`; tăng thêm `1` khi một task đã bắt đầu xử lý và được update ra kết quả `pending` hoặc `failed`. |
-| `created_by` | `run_created_by_enum` | Nguồn tạo run: `schedule` hoặc `manual`. |
-| `created_at` | `TIMESTAMPTZ` | Thời điểm tạo row run, dùng như thời điểm bắt đầu run. |
+| Cột           | Type                  | Mô tả                                                                                                        |
+| ------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `run_id`      | `BIGSERIAL`           | Primary key của run.                                                                                         |
+| `source_id`   | `BIGINT`              | FK tới `crawl_sources.source_id`. Mặc định `1` cho SUUMO.                                                    |
+| `finished_at` | `TIMESTAMPTZ`         | Lưu khi run kết thúc, dù thành công, lỗi, bị dừng, hoặc hết URL.                                             |
+| `total_urls`  | `INTEGER`             | Mặc định `0`; tăng thêm `1` khi một task đã bắt đầu xử lý và được update ra kết quả `pending` hoặc `failed`. |
+| `created_by`  | `run_created_by_enum` | Nguồn tạo run: `schedule` hoặc `manual`.                                                                     |
+| `created_at`  | `TIMESTAMPTZ`         | Thời điểm tạo row run, dùng như thời điểm bắt đầu run.                                                       |
 
 Số task thành công/lỗi được tính từ `crawl_tasks` theo `run_id` khi cần báo cáo,
 không lưu trực tiếp trong `crawl_runs`.
@@ -143,19 +143,19 @@ Không backfill từ total_urls. Xem [runbook pool VPN](crawler-vpn-pool.md).
 
 Lưu metadata của raw HTML/JSON đã được fetch và upload lên MinIO.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `raw_snapshot_id` | `BIGSERIAL` | Primary key của raw snapshot. |
-| `url` | `TEXT` | URL request ban đầu, cùng chuẩn normalize với `crawl_tasks.url`. |
-| `final_url` | `TEXT` | URL cuối sau redirect. Nếu giống URL ban đầu thì để null. |
-| `http_status` | `INTEGER` | HTTP status của response, từ `100` đến `599`. |
-| `content_type` | `raw_content_type_enum` | Media type của raw payload. |
-| `content_length` | `BIGINT` | Độ dài bytes gốc trước khi nén. |
-| `content_hash` | `TEXT` | SHA-256 của bytes gốc trước khi nén. |
-| `storage_path` | `TEXT` | MinIO path của raw payload đã nén. |
-| `compression` | `TEXT` | Thuật toán nén, hiện dùng `gzip`. |
-| `encoding` | `TEXT` | Encoding/charset lấy từ response nếu có. |
-| `created_at` | `TIMESTAMPTZ` | Thời điểm ghi metadata snapshot. |
+| Cột               | Type                    | Mô tả                                                            |
+| ----------------- | ----------------------- | ---------------------------------------------------------------- |
+| `raw_snapshot_id` | `BIGSERIAL`             | Primary key của raw snapshot.                                    |
+| `url`             | `TEXT`                  | URL request ban đầu, cùng chuẩn normalize với `crawl_tasks.url`. |
+| `final_url`       | `TEXT`                  | URL cuối sau redirect. Nếu giống URL ban đầu thì để null.        |
+| `http_status`     | `INTEGER`               | HTTP status của response, từ `100` đến `599`.                    |
+| `content_type`    | `raw_content_type_enum` | Media type của raw payload.                                      |
+| `content_length`  | `BIGINT`                | Độ dài bytes gốc trước khi nén.                                  |
+| `content_hash`    | `TEXT`                  | SHA-256 của bytes gốc trước khi nén.                             |
+| `storage_path`    | `TEXT`                  | MinIO path của raw payload đã nén.                               |
+| `compression`     | `TEXT`                  | Thuật toán nén, hiện dùng `gzip`.                                |
+| `encoding`        | `TEXT`                  | Encoding/charset lấy từ response nếu có.                         |
+| `created_at`      | `TIMESTAMPTZ`           | Thời điểm ghi metadata snapshot.                                 |
 
 `raw_snapshots` không lưu trực tiếp `source_id` hoặc `run_id`. Khi cần truy vết
 source/run của raw payload, join qua `crawl_tasks.raw_snapshot_id`, rồi tới
@@ -175,20 +175,20 @@ suumo/page_source/{date}/{run_id}/{raw_snapshot_id}.json.gz
 
 Lưu từng URL detail cần fetch và trạng thái xử lý của URL đó.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `task_id` | `BIGSERIAL` | Primary key của task. |
-| `run_id` | `BIGINT` | FK tới run tạo task. |
-| `url` | `TEXT` | URL đã bỏ base URL nếu thuộc source hiện tại. |
-| `url_hash` | `TEXT` | SHA-256 của URL đã normalize. Unique trong phạm vi cùng `run_id`. |
-| `method` | `http_method_enum` | HTTP method thực tế của request. |
-| `status` | `crawl_task_status_enum` | Trạng thái task. |
-| `error_type` | `TEXT` | Nhóm lỗi khi task lỗi. |
-| `error_message` | `TEXT` | Nội dung lỗi khi task lỗi. |
-| `scheduled_at` | `TIMESTAMPTZ` | Thời điểm bắt đầu crawl task. |
-| `fetched_at` | `TIMESTAMPTZ` | Thời điểm raw payload đã lưu MinIO thành công. Null nếu fetch/lưu thất bại. |
-| `raw_snapshot_id` | `BIGINT` | FK tới raw snapshot được tạo sau khi lưu MinIO thành công. |
-| `batch_id` | `BIGINT` | FK tới `load_batches.batch_id` chứa parser record JSON của task này. Null nếu chưa parse/batch. |
+| Cột               | Type                     | Mô tả                                                                                           |
+| ----------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `task_id`         | `BIGSERIAL`              | Primary key của task.                                                                           |
+| `run_id`          | `BIGINT`                 | FK tới run tạo task.                                                                            |
+| `url`             | `TEXT`                   | URL đã bỏ base URL nếu thuộc source hiện tại.                                                   |
+| `url_hash`        | `TEXT`                   | SHA-256 của URL đã normalize. Unique trong phạm vi cùng `run_id`.                               |
+| `method`          | `http_method_enum`       | HTTP method thực tế của request.                                                                |
+| `status`          | `crawl_task_status_enum` | Trạng thái task.                                                                                |
+| `error_type`      | `TEXT`                   | Nhóm lỗi khi task lỗi.                                                                          |
+| `error_message`   | `TEXT`                   | Nội dung lỗi khi task lỗi.                                                                      |
+| `scheduled_at`    | `TIMESTAMPTZ`            | Thời điểm bắt đầu crawl task.                                                                   |
+| `fetched_at`      | `TIMESTAMPTZ`            | Thời điểm raw payload đã lưu MinIO thành công. Null nếu fetch/lưu thất bại.                     |
+| `raw_snapshot_id` | `BIGINT`                 | FK tới raw snapshot được tạo sau khi lưu MinIO thành công.                                      |
+| `batch_id`        | `BIGINT`                 | FK tới `load_batches.batch_id` chứa parser record JSON của task này. Null nếu chưa parse/batch. |
 
 `suumo_links` truncate file tmp ở đầu mỗi lần chạy, hash URL tìm được, so với
 toàn bộ `crawl_tasks.url_hash`, và chỉ ghi URL chưa từng tồn tại trong
@@ -219,17 +219,17 @@ giữ record trong bộ nhớ đệm, rồi flush thành một JSON array đã g
 Mỗi object JSON phải luôn có đủ các key trong schema. Field nào không có dữ liệu
 thì để `null`, không được ẩn key.
 
-| Key | Type | Mô tả |
-| --- | --- | --- |
-| `task_id` | `INTEGER` | ID của `crawl_tasks` được parse. |
-| `image_public_url` | `TEXT` | URL public của ảnh nếu source cung cấp và ảnh public. Có thể null. |
-| `image_storage_path` | `TEXT` | MinIO path ảnh đã lưu trong `suumo/image`. Có thể null. |
-| Các key tiếng Nhật | `TEXT` | Dữ liệu raw đã parse từ SUUMO. Key không có dữ liệu phải là null. |
-| `data_hash` | `TEXT` | SHA-256 của dữ liệu source đã parse. |
-| `parsed_at` | `TEXT` | Timestamp ISO-8601 lúc parse record. |
-| `is_valid` | `BOOLEAN` | True nếu record vượt qua validation đầu vào. |
-| `error_type` | `TEXT` | Nhóm lỗi validation/parse nếu `is_valid = false`. |
-| `error_message` | `TEXT` | Nội dung lỗi validation/parse nếu `is_valid = false`. |
+| Key                  | Type      | Mô tả                                                              |
+| -------------------- | --------- | ------------------------------------------------------------------ |
+| `task_id`            | `INTEGER` | ID của `crawl_tasks` được parse.                                   |
+| `image_public_url`   | `TEXT`    | URL public của ảnh nếu source cung cấp và ảnh public. Có thể null. |
+| `image_storage_path` | `TEXT`    | MinIO path ảnh đã lưu trong `suumo/image`. Có thể null.            |
+| Các key tiếng Nhật   | `TEXT`    | Dữ liệu raw đã parse từ SUUMO. Key không có dữ liệu phải là null.  |
+| `data_hash`          | `TEXT`    | SHA-256 của dữ liệu source đã parse.                               |
+| `parsed_at`          | `TEXT`    | Timestamp ISO-8601 lúc parse record.                               |
+| `is_valid`           | `BOOLEAN` | True nếu record vượt qua validation đầu vào.                       |
+| `error_type`         | `TEXT`    | Nhóm lỗi validation/parse nếu `is_valid = false`.                  |
+| `error_message`      | `TEXT`    | Nội dung lỗi validation/parse nếu `is_valid = false`.              |
 
 Các cột dữ liệu tiếng Nhật hiện gồm:
 
@@ -301,23 +301,23 @@ suumo/image/{date}/{run_id}/{task_id}.{extension}
 Lưu metadata của file batch được tạo từ nhiều JSON `parser_records` trước khi
 loader ghi dữ liệu vào bảng đích.
 
-| Cột | Type | Mô tả |
-| --- | --- | --- |
-| `batch_id` | `BIGSERIAL` | Primary key của batch. |
-| `source_id` | `BIGINT` | FK tới source. |
-| `file_path` | `TEXT` | MinIO path file batch trong `suumo/data`. Unique. |
-| `file_format` | `TEXT` | Format file, hiện parser ghi `json` dạng JSON array. |
-| `compression` | `TEXT` | Thuật toán nén file batch, ví dụ `gzip`. |
-| `row_count` | `INTEGER` | Số row parser record trong batch file. |
-| `file_hash` | `TEXT` | SHA-256 của bytes file cuối cùng được upload lên MinIO, sau nén nếu có `compression`. |
-| `status` | `load_batch_status_enum` | Trạng thái load batch. |
-| `inserted_count` | `INTEGER` | Số parser record hợp lệ đã được ghi thành công vào warehouse. Chỉ tính record có `is_valid = true`. |
-| `failed_count` | `INTEGER` | Số parser record không được ghi vào warehouse, gồm record `is_valid = false` hoặc lỗi ghi từng row. |
-| `error_message` | `TEXT` | Nội dung lỗi batch nếu load thất bại. |
-| `created_at` | `TIMESTAMPTZ` | Thời điểm file batch đã được tạo, nén, upload lên MinIO, và metadata được ghi DB. |
-| `started_loading_at` | `TIMESTAMPTZ` | Thời điểm loader bắt đầu load batch. |
-| `finished_loading_at` | `TIMESTAMPTZ` | Thời điểm loader kết thúc, kể cả khi failed. |
-| `loaded_at` | `TIMESTAMPTZ` | Thời điểm load thành công. Null nếu failed. |
+| Cột                   | Type                     | Mô tả                                                                                               |
+| --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `batch_id`            | `BIGSERIAL`              | Primary key của batch.                                                                              |
+| `source_id`           | `BIGINT`                 | FK tới source.                                                                                      |
+| `file_path`           | `TEXT`                   | MinIO path file batch trong `suumo/data`. Unique.                                                   |
+| `file_format`         | `TEXT`                   | Format file, hiện parser ghi `json` dạng JSON array.                                                |
+| `compression`         | `TEXT`                   | Thuật toán nén file batch, ví dụ `gzip`.                                                            |
+| `row_count`           | `INTEGER`                | Số row parser record trong batch file.                                                              |
+| `file_hash`           | `TEXT`                   | SHA-256 của bytes file cuối cùng được upload lên MinIO, sau nén nếu có `compression`.               |
+| `status`              | `load_batch_status_enum` | Trạng thái load batch.                                                                              |
+| `inserted_count`      | `INTEGER`                | Số parser record hợp lệ đã được ghi thành công vào warehouse. Chỉ tính record có `is_valid = true`. |
+| `failed_count`        | `INTEGER`                | Số parser record không được ghi vào warehouse, gồm record `is_valid = false` hoặc lỗi ghi từng row. |
+| `error_message`       | `TEXT`                   | Nội dung lỗi batch nếu load thất bại.                                                               |
+| `created_at`          | `TIMESTAMPTZ`            | Thời điểm file batch đã được tạo, nén, upload lên MinIO, và metadata được ghi DB.                   |
+| `started_loading_at`  | `TIMESTAMPTZ`            | Thời điểm loader bắt đầu load batch.                                                                |
+| `finished_loading_at` | `TIMESTAMPTZ`            | Thời điểm loader kết thúc, kể cả khi failed.                                                        |
+| `loaded_at`           | `TIMESTAMPTZ`            | Thời điểm load thành công. Null nếu failed.                                                         |
 
 `failed_count > 0` là lỗi cấp record và batch vẫn có thể `status = 'success'`
 nếu loader đọc file và xử lý batch hoàn tất. `status = 'failed'` chỉ dùng cho
@@ -342,3 +342,20 @@ suumo/data/{timestamp}.json.gz
 `crawl_runs` bổ sung `area_id` FK, `pipeline_key` TEXT unique nullable cho lịch sử/HTML-only, `search_url` TEXT, `area_snapshot` JSONB, `pipeline_status` TEXT nullable, `pipeline_finished_at` và `cleanup_confirmed_at` TIMESTAMPTZ. Row pipeline tạo trước VPN; key unique giữ idempotency. `finished_at` vẫn là HTML. Trạng thái running/completed/preflight_failed/crawl_failed/cleanup_failed/interrupted; lịch sử cũ không suy diễn pipeline, backfill ward Yodogawa theo xác nhận.
 
 Xem [runbook ward](crawler-ward-dispatch.md) về budget/ngày, hàng chờ, recovery và triển khai.
+
+## Building metadata trong warehouse — 2026-10-10
+
+Crawler metadata schema không đổi. Parser JSON mới bổ sung `listing_headline_raw`,
+`building_name_raw`, `room_number_raw`, `building_name_source`,
+`building_name_parse_status`, `data_hash_version=2`. Record cũ mặc định hash v1;
+không viết lại batch/snapshot/hash lịch sử.
+
+Warehouse dùng `raw.suumo_building_name_backfill` với PK `(source_id, task_id)`;
+DDL idempotent ở `pipeline/warehouse/suumo_building_name_backfill.sql`, áp dụng
+bằng `make -C pipeline building-init` cho database hiện có hoặc warehouse bootstrap.
+Audit gồm listing code, raw snapshot/path/content hash, parser version, kết quả
+và thời điểm backfill. Model dbt kiểm tra PK/FK; xem [runbook](suumo-buildings.md).
+
+## MLIT zoning enrichment (local)
+
+Nguồn MLIT có content hash, matching PostGIS EPSG:6668/6674 và publication nguyên tử nằm ngoài SCD2 building/listing. Các view `*_with_zoning` giữ grain và cột gốc. DAG `mlit_zoning_refresh` sở hữu `mlit_zoning_core`; SUUMO dựng input rồi trigger `reuse_source`. Xem [runbook MLIT](mlit-zoning.md) để bootstrap, review/rollback/export và kiểm thử.

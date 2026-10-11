@@ -84,3 +84,15 @@ chạy `dbt-seed-notebook` trước lần build hoặc DAG đầu tiên.
 Kết quả local ngày 2026-09-25: 17.927 seed observations và 19 operational
 observations tạo thành 17.946 observation; các task không trùng nhau. Latest-known
 có 17.395 listing vì một số property code lặp qua các lần quan sát/nguồn.
+
+## Building dimension — local 2026-10-10
+
+`rental_listing_latest` nối phiên bản listing và phiên bản building của cùng
+observation. Thuộc tính tòa đọc từ `dim_building`; tuổi tòa đọc từ fact. Các cột
+nghiệp vụ cũ giữ nguyên, bổ sung building keys/name/identity status, số phòng và
+cờ xung đột. Không đổi cấu hình charts. Xem [runbook](suumo-buildings.md).
+
+Các cột tọa độ trong history/latest hiện lấy từ `dim_building`, mức
+`building_poi`; thêm địa chỉ chi tiết, block/số nhà và Place ID/URL để đối chiếu.
+Thiếu tên hoặc chưa matched giữ NULL, không fallback GSI chōme. Xem
+[building locator](suumo-building-locations.md).

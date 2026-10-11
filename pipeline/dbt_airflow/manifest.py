@@ -1,4 +1,5 @@
 """Generate an atomic, fingerprinted manifest without connecting to the warehouse."""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,21 +15,46 @@ REFRESH_COMMAND = "make -C pipeline dbt-airflow-manifest"
 def project_fingerprint(project: Path) -> str:
     digest = hashlib.sha256()
     files = []
-    for folder in ("models", "macros", "tests", "seeds", "snapshots", "analyses", "dbt_packages"):
+    for folder in (
+        "models",
+        "macros",
+        "tests",
+        "seeds",
+        "snapshots",
+        "analyses",
+        "dbt_packages",
+    ):
         root = project / folder
         if root.exists():
-            files.extend(p for p in root.rglob("*") if p.is_file() and p.suffix in {".sql", ".yml", ".yaml", ".csv", ".py"})
-    files.extend(project / name for name in (
-        "dbt_project.yml", "profiles.yml", "packages.yml", "dependencies.yml", "package-lock.yml"
-    ) if (project / name).exists())
+            files.extend(
+                p
+                for p in root.rglob("*")
+                if p.is_file() and p.suffix in {".sql", ".yml", ".yaml", ".csv", ".py"}
+            )
+    files.extend(
+        project / name
+        for name in (
+            "dbt_project.yml",
+            "profiles.yml",
+            "packages.yml",
+            "dependencies.yml",
+            "package-lock.yml",
+        )
+        if (project / name).exists()
+    )
     for path in sorted(files):
         digest.update(str(path.relative_to(project)).encode())
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
     # Only a digest is stored: never persist credentials in an artifact.
-    for name in ("WAREHOUSE_POSTGRES_HOST", "WAREHOUSE_POSTGRES_PORT", "WAREHOUSE_DB",
-                 "PIPELINE_POSTGRES_USER", "PIPELINE_POSTGRES_PASSWORD"):
+    for name in (
+        "WAREHOUSE_POSTGRES_HOST",
+        "WAREHOUSE_POSTGRES_PORT",
+        "WAREHOUSE_DB",
+        "PIPELINE_POSTGRES_USER",
+        "PIPELINE_POSTGRES_PASSWORD",
+    ):
         digest.update(name.encode())
         digest.update(os.getenv(name, "").encode())
         digest.update(b"\0")
@@ -48,7 +74,9 @@ def load_manifest(project: Path) -> dict:
 def assert_fresh(project: Path, expected: str) -> None:
     current = load_manifest(project)["_airflow"]["fingerprint"]
     if current != expected or project_fingerprint(project) != expected:
-        raise RuntimeError(f"dbt code/config changed since this DAG was parsed. Run: {REFRESH_COMMAND}")
+        raise RuntimeError(
+            f"dbt code/config changed since this DAG was parsed. Run: {REFRESH_COMMAND}"
+        )
 
 
 def refresh_manifest(project: Path) -> None:
@@ -56,11 +84,22 @@ def refresh_manifest(project: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     before = project_fingerprint(project)
     with tempfile.TemporaryDirectory(prefix="parse-", dir=destination) as temporary:
-        subprocess.run([
-            "/opt/airflow/dbt_venv/bin/dbt", "parse", "--no-partial-parse",
-            "--project-dir", str(project), "--profiles-dir", str(project),
-            "--target-path", temporary, "--log-path", str(Path(temporary) / "logs"),
-        ], check=True)
+        subprocess.run(
+            [
+                "/opt/airflow/dbt_venv/bin/dbt",
+                "parse",
+                "--no-partial-parse",
+                "--project-dir",
+                str(project),
+                "--profiles-dir",
+                str(project),
+                "--target-path",
+                temporary,
+                "--log-path",
+                str(Path(temporary) / "logs"),
+            ],
+            check=True,
+        )
         if project_fingerprint(project) != before:
             raise RuntimeError("dbt files changed during parse; refresh manifest again")
         path = Path(temporary) / "manifest.json"

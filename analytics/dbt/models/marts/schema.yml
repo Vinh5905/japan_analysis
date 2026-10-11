@@ -1,139 +1,259 @@
 version: 2
 
 models:
-  - name: int_suumo__mart_observations
-    description: "Eligible observations with conservative mart descriptors, explicit unknown fees and JSONB descriptor sets."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-  - name: int_suumo__listing_timeline
-    description: "One row per eligible task mapped to a consecutive SCD2 version; rebuilt to handle late observations."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-  - name: dim_rental_listing
-    description: "SCD2 listing descriptors and rental terms. Identity is source_id + SUUMO code, not physical property. Exact area is only in fact."
-    columns:
-      - name: listing_version_key
-        data_tests:
-          - not_null
-          - unique
-  - name: dim_geography
-    description: "Distinct normalized geographic profiles with optional chome address-search points. Geography identity excludes coordinates; these are not building locations."
-    columns:
-      - name: latitude
-        description: "Latitude in decimal degrees; nullable if no accepted chome point."
-      - name: longitude
-        description: "Longitude in decimal degrees; nullable if no accepted chome point."
-      - name: coordinate_level
-        description: "chome for accepted points; does not imply rooftop accuracy or a mathematical centroid."
-      - name: geocode_status
-        description: "matched, a provider failure status, invalid_input, or not_requested when cache is absent."
-      - name: geocode_provider
-        description: "Geocoder that supplied the cached result."
-      - name: geocode_matched_address
-        description: "Address label returned by the geocoder, retained for audit."
-      - name: geocoded_at
-        description: "UTC timestamp of the accepted provider result."
-      - name: geography_key
-        data_tests:
-          - not_null
-          - unique
-  - name: dim_observation_quality
-    description: "Distinct quality profiles, separate from business descriptor versioning."
-    columns:
-      - name: observation_quality_key
-        data_tests:
-          - not_null
-          - unique
-  - name: dim_date
-    description: "Continuous Japan-local dates between first and last eligible observation."
-    columns:
-      - name: date_key
-        data_tests:
-          - not_null
-          - unique
-  - name: dim_station_label
-    description: "Source station labels, not canonical physical stations. All-zero key represents an unparsed route."
-    columns:
-      - name: station_label_key
-        data_tests:
-          - not_null
-          - unique
-  - name: fct_rental_price_observation
-    description: "One row per eligible parser task including unchanged prices. Asking prices are not revenue."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-      - name: listing_version_key
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('dim_rental_listing')
-              field: listing_version_key
-      - name: geography_key
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('dim_geography')
-              field: geography_key
-      - name: observation_quality_key
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('dim_observation_quality')
-              field: observation_quality_key
-      - name: parsed_date_key
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('dim_date')
-              field: date_key
-      - name: parsed_at_utc
-        data_tests:
-          - not_null
-  - name: bridge_observation_station_access
-    description: "All access routes for eligible observations, including unparsed routes. Deduplicate tasks before aggregating prices by station."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('fct_rental_price_observation')
-              field: task_id
-      - name: station_label_key
-        data_tests:
-          - not_null
-          - relationships:
-              to: ref('dim_station_label')
-              field: station_label_key
-      - name: access_order
-        data_tests:
-          - not_null
-  - name: rental_price_observations
-    description: "Full observation history with LAG/LEAD and calculated measures. Apply report period filters after this view."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-  - name: rental_prices_latest_known
-    description: "Latest observed task per source + listing code. Does not assert currently active inventory."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
-  - name: rental_price_mart_rejects
-    description: "Ineligible records retained for audit; never assigned a shared unknown listing."
-    columns:
-      - name: task_id
-        data_tests:
-          - not_null
-          - unique
+    - name: int_suumo__building_lookup_candidates
+      description: "Distinct named/chome candidates before HTTP lookup; identity comes from existing dbt building keys."
+      columns:
+          - name: building_key
+            data_tests: [not_null, unique]
+          - name: building_name_normalized
+            data_tests: [not_null]
+          - name: building_address_query
+            data_tests: [not_null]
+    - name: stg_suumo__building_locations
+      description: "One active Google HTTP matching-policy result per building candidate. Failures never substitute an area point."
+      columns:
+          - name: building_key
+            data_tests: [not_null, unique]
+          - name: status
+            data_tests:
+                - not_null
+                - accepted_values:
+                      arguments:
+                          values:
+                              [
+                                  "matched",
+                                  "not_found",
+                                  "ambiguous",
+                                  "invalid_input",
+                                  "invalid_response",
+                                  "request_error",
+                                  "blocked",
+                                  "rate_limited",
+                              ]
+    - name: int_suumo__mart_observations
+      description: "Eligible observations with conservative mart descriptors, explicit unknown fees and JSONB descriptor sets."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+    - name: int_suumo__listing_timeline
+      description: "One row per eligible task mapped to a consecutive SCD2 version; rebuilt to handle late observations."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+    - name: int_suumo__building_events
+      description: "One candidate building identity per eligible task. Missing names/addresses stay isolated by listing."
+      columns:
+          - name: task_id
+            data_tests: [not_null, unique]
+          - name: building_key
+            data_tests: [not_null]
+          - name: building_identity_status
+            data_tests:
+                - accepted_values:
+                      arguments:
+                          values: ["named_candidate", "unresolved_listing"]
+    - name: int_suumo__building_timeline
+      description: "Task-to-building-version map ordered by source update date, observation time and task. Known nonnull descriptors carry forward only."
+      columns:
+          - name: task_id
+            data_tests: [not_null, unique]
+    - name: dim_building
+      description: "SCD2 candidate profiles plus latest-known building POI enrichment. Exact provider matching is not independent rooftop verification; location metadata does not generate SCD2 versions."
+      columns:
+          - name: building_version_key
+            data_tests: [not_null, unique]
+          - name: building_key
+            description: "Stable candidate identity; unresolved_listing identities are listing-scoped placeholders."
+            data_tests: [not_null]
+          - name: geography_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_geography')
+                      field: geography_key
+          - name: building_name
+            description: "NFKC, whitespace-free, lowercased name; nullable. Original heading stays in staging/history."
+          - name: effective_from_utc
+            description: "Source information update date at Japan midnight; original observation timestamp is the fallback. Compare the full date/observation/task tuple for ties."
+          - name: building_full_address_raw
+            description: "Accepted Japanese address exactly as returned by Google; SUUMO source address is preserved upstream."
+          - name: building_full_address
+            description: "Accepted chome plus block/house number, NFKC normalized without postcode or building suffix. NULL if no unique matching building."
+          - name: postal_code
+            description: "Postcode from accepted provider address, if present."
+          - name: address_block
+            description: "Block number after chome; not a cadastral parcel identifier."
+          - name: address_house_number
+            description: "House/address number after block; not the room number."
+          - name: latitude
+            description: "Latitude of uniquely matched building POI; never falls back to chome."
+          - name: longitude
+            description: "Longitude of uniquely matched building POI."
+          - name: coordinate_level
+            description: "building_poi for accepted Google location; no guarantee of rooftop/parcel accuracy."
+          - name: geocode_status
+            data_tests:
+                - not_null
+                - accepted_values:
+                      arguments:
+                          values:
+                              [
+                                  "matched",
+                                  "not_found",
+                                  "ambiguous",
+                                  "invalid_input",
+                                  "invalid_response",
+                                  "request_error",
+                                  "blocked",
+                                  "rate_limited",
+                                  "not_requested",
+                              ]
+          - name: geocode_provider
+            description: "google_maps_http when a cache entry exists."
+          - name: geocode_matched_address
+            description: "Accepted provider address label."
+          - name: geocode_match_method
+            description: "exact_name_chome_house_number; provider evidence, not independent validation."
+          - name: geocoded_at
+            description: "UTC accepted lookup time; latest-known enrichment applied to named building versions, not historical source effective time."
+          - name: google_place_id
+            description: "Provider place identity used to detect ambiguous matches."
+          - name: google_maps_url
+            description: "Provider place URL retained for manual inspection."
+    - name: dim_rental_listing
+      description: "SCD2 room/listing descriptors and rental terms; building properties belong to dim_building. Identity is source_id + SUUMO code, not physical property. Exact area is only in fact."
+      columns:
+          - name: listing_version_key
+            data_tests:
+                - not_null
+                - unique
+    - name: dim_geography
+      description: "Distinct chome profiles. GSI point fields are legacy compatibility data; current analysis views obtain coordinates exclusively from dim_building."
+      columns:
+          - name: latitude
+            description: "Latitude in decimal degrees; nullable if no accepted chome point."
+          - name: longitude
+            description: "Longitude in decimal degrees; nullable if no accepted chome point."
+          - name: coordinate_level
+            description: "chome for accepted points; does not imply rooftop accuracy or a mathematical centroid."
+          - name: geocode_status
+            description: "matched, a provider failure status, invalid_input, or not_requested when cache is absent."
+          - name: geocode_provider
+            description: "Geocoder that supplied the cached result."
+          - name: geocode_matched_address
+            description: "Address label returned by the geocoder, retained for audit."
+          - name: geocoded_at
+            description: "UTC timestamp of the accepted provider result."
+          - name: geography_key
+            data_tests:
+                - not_null
+                - unique
+    - name: dim_observation_quality
+      description: "Distinct quality profiles, separate from business descriptor versioning."
+      columns:
+          - name: observation_quality_key
+            data_tests:
+                - not_null
+                - unique
+    - name: dim_date
+      description: "Continuous Japan-local dates between first and last eligible observation."
+      columns:
+          - name: date_key
+            data_tests:
+                - not_null
+                - unique
+    - name: dim_station_label
+      description: "Source station labels, not canonical physical stations. All-zero key represents an unparsed route."
+      columns:
+          - name: station_label_key
+            data_tests:
+                - not_null
+                - unique
+    - name: fct_rental_price_observation
+      description: "One row per eligible parser task including unchanged prices. Asking prices are not revenue."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+          - name: building_version_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_building')
+                      field: building_version_key
+          - name: building_age_years
+            description: "Age reported in this observation, not a building SCD2 descriptor."
+          - name: building_attributes_conflict
+            description: "Conflicting known building descriptors on the same source update day; NULL absence is not a conflict."
+          - name: listing_version_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_rental_listing')
+                      field: listing_version_key
+          - name: geography_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_geography')
+                      field: geography_key
+          - name: observation_quality_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_observation_quality')
+                      field: observation_quality_key
+          - name: parsed_date_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_date')
+                      field: date_key
+          - name: parsed_at_utc
+            data_tests:
+                - not_null
+    - name: bridge_observation_station_access
+      description: "All access routes for eligible observations, including unparsed routes. Deduplicate tasks before aggregating prices by station."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('fct_rental_price_observation')
+                      field: task_id
+          - name: station_label_key
+            data_tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_station_label')
+                      field: station_label_key
+          - name: access_order
+            data_tests:
+                - not_null
+    - name: rental_price_observations
+      description: "Full observation history with LAG/LEAD and calculated measures. Apply report period filters after this view."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+    - name: rental_prices_latest_known
+      description: "Latest observed task per source + listing code. Does not assert currently active inventory."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
+    - name: rental_price_mart_rejects
+      description: "Ineligible records retained for audit; never assigned a shared unknown listing."
+      columns:
+          - name: task_id
+            data_tests:
+                - not_null
+                - unique
