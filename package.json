@@ -1,0 +1,8 @@
+{
+    "name": "japan-analysis-formatting",
+    "private": true,
+    "description": "Local development formatters; not part of the pipeline runtime",
+    "devDependencies": {
+        "prettier": "3.9.10"
+    }
+}

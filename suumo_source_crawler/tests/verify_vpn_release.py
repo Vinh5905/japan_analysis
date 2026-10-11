@@ -1,4 +1,5 @@
 """Read-only VPS release acceptance; never start a crawl or OpenVPN."""
+
 import hashlib
 import json
 from pathlib import Path
@@ -6,12 +7,12 @@ import shlex
 import subprocess
 import sys
 
-ROOT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT/'suumo_source_crawler'))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "suumo_source_crawler"))
 from scripts.deploy_release import HOST_FILES
 from scripts.vpn_pool import inventory
 
-REMOTE=r'''
+REMOTE = r"""
 import hashlib,json,sqlite3,subprocess,sys,time
 from datetime import datetime
 from pathlib import Path
@@ -68,28 +69,54 @@ backup=root/'.releases/20261009-vpn-03-c9a3878b'
 assert all((backup/name).is_file() for name in ('crawler-db.sql','telegram-control.sqlite3','japan.conf','paths.json')),'backup missing'
 assert hashlib.sha256((backup/'japan.conf').read_bytes()).hexdigest()==config_hash,'VPN backup mismatch'
 print(json.dumps({'tag':expected['tag'],'host_checksums':len(expected['host_files']),'VPNs':len(rows),'initial_requests':0,'history':host.total(),'schedule':schedule,'automatic_start':datetime.fromtimestamp(schedule['automatic_start_at'],ZoneInfo('Asia/Ho_Chi_Minh')).isoformat(),'menu_commands':len(menu),'image_digest':expected['digest'],'image_checksums':len(actual),'units':units,'backup':str(backup)}))
-'''
+"""
 
 
 def main():
     """Ship only checksum metadata and verification code, never private config data."""
-    image_files={
-        '/app/crawler/'+str(p.relative_to(ROOT/'suumo_source_crawler/crawler')):hashlib.sha256(p.read_bytes()).hexdigest()
-        for p in [ROOT/'suumo_source_crawler/crawler'/name for name in
-                  ('crawler/vpn_accounting.py','crawler/metadata_db.py','crawler/settings.py',
-                   'crawler/telegram_extension.py','crawler/telegram_notifier.py','tools/manual_rerun_failed_html.py')]}
-    expected={'tag':'20261009-vpn-03','digest':'sha256:21cb803aa1b1dcca4c7cb924b001631c9009278704ea7cc62eadbad78b588a90',
-              'host_files':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in HOST_FILES},
-              'vpns':inventory(ROOT/'suumo_source_crawler/vpn_config'),'image_files':image_files}
-    code=REMOTE.replace('EXPECTED','expected=json.loads('+repr(json.dumps(expected))+')')
-    result=subprocess.run(['ssh','thuevpsgiare',shlex.join(['python3','-'])],input=code,capture_output=True,text=True)
+    image_files = {
+        "/app/crawler/"
+        + str(p.relative_to(ROOT / "suumo_source_crawler/crawler")): hashlib.sha256(
+            p.read_bytes()
+        ).hexdigest()
+        for p in [
+            ROOT / "suumo_source_crawler/crawler" / name
+            for name in (
+                "crawler/vpn_accounting.py",
+                "crawler/metadata_db.py",
+                "crawler/settings.py",
+                "crawler/telegram_extension.py",
+                "crawler/telegram_notifier.py",
+                "tools/manual_rerun_failed_html.py",
+            )
+        ]
+    }
+    expected = {
+        "tag": "20261009-vpn-03",
+        "digest": "sha256:21cb803aa1b1dcca4c7cb924b001631c9009278704ea7cc62eadbad78b588a90",
+        "host_files": {
+            name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+            for name in HOST_FILES
+        },
+        "vpns": inventory(ROOT / "suumo_source_crawler/vpn_config"),
+        "image_files": image_files,
+    }
+    code = REMOTE.replace(
+        "EXPECTED", "expected=json.loads(" + repr(json.dumps(expected)) + ")"
+    )
+    result = subprocess.run(
+        ["ssh", "thuevpsgiare", shlex.join(["python3", "-"])],
+        input=code,
+        capture_output=True,
+        text=True,
+    )
     if result.returncode:
         print(result.stderr)
         return result.returncode
     print(result.stdout)
-    (ROOT/'tmp/releases/vpn-03-verification.json').write_text(result.stdout)
+    (ROOT / "tmp/releases/vpn-03-verification.json").write_text(result.stdout)
     return 0
 
 
-if __name__=='__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

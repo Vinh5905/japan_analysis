@@ -161,7 +161,9 @@ class TelegramNotificationExtension:
     def spider_error(self, failure, response, spider) -> None:
         """Capture unhandled spider callback errors for the final lifecycle summary."""
 
-        exception_type = getattr(getattr(failure, "type", None), "__name__", "SpiderError")
+        exception_type = getattr(
+            getattr(failure, "type", None), "__name__", "SpiderError"
+        )
         error_message = sanitize_text(getattr(failure, "value", failure))
         self.spider_errors.append(
             {
@@ -194,16 +196,23 @@ class TelegramNotificationExtension:
         if spider.name == "suumo_links":
             new_links = len(getattr(spider, "seen_url_hashes", set()))
 
-        if stats.get('vpn/accounting_failed'):
-            reason = 'vpn_accounting_failed'
+        if stats.get("vpn/accounting_failed"):
+            reason = "vpn_accounting_failed"
         status = "completed"
         warning_message = self._warning_message(spider.name, new_links)
         if reason not in SUCCESS_CLOSE_REASONS:
             status = "failed"
-        elif warning_message or self.spider_errors or self.html_failed_count or self.invalid_record_count:
+        elif (
+            warning_message
+            or self.spider_errors
+            or self.html_failed_count
+            or self.invalid_record_count
+        ):
             status = "warning"
 
-        latest_error = self.spider_errors[-1] if self.spider_errors else self.error_handler.latest
+        latest_error = (
+            self.spider_errors[-1] if self.spider_errors else self.error_handler.latest
+        )
         exception_type = latest_error.get("error_type") if latest_error else None
         error_message = latest_error.get("error_message") if latest_error else None
 
@@ -219,10 +228,12 @@ class TelegramNotificationExtension:
         )
         possible_causes = infer_possible_causes(diagnostic_text)
         no_results = (
-            spider.name == "suumo_links" and new_links == 0
+            spider.name == "suumo_links"
+            and new_links == 0
             or spider.name == "suumo_html"
             and self.html_success_count + self.html_failed_count == 0
-            or spider.name == "suumo_page" and self.parsed_record_count == 0
+            or spider.name == "suumo_page"
+            and self.parsed_record_count == 0
         )
         if reason == "shutdown":
             possible_causes.append(
@@ -258,19 +269,28 @@ class TelegramNotificationExtension:
         warnings: list[str] = []
         if job_name == "suumo_links" and new_links == 0:
             warnings.append("Không tìm thấy URL bất động sản mới.")
-        if job_name == "suumo_html" and self.html_success_count + self.html_failed_count == 0:
+        if (
+            job_name == "suumo_html"
+            and self.html_success_count + self.html_failed_count == 0
+        ):
             warnings.append("Không có URL mới cần tải HTML.")
         elif job_name == "suumo_html" and self.html_failed_count:
             warnings.append(f"Có {self.html_failed_count} HTML crawl thất bại.")
         if job_name == "suumo_page" and self.parsed_record_count == 0:
             warnings.append("Không có crawl task pending để parse.")
         elif job_name == "suumo_page" and self.invalid_record_count:
-            warnings.append(f"Có {self.invalid_record_count} parser record không hợp lệ.")
+            warnings.append(
+                f"Có {self.invalid_record_count} parser record không hợp lệ."
+            )
         if self.spider_errors:
-            warnings.append(f"Có {len(self.spider_errors)} spider exception chưa được xử lý.")
+            warnings.append(
+                f"Có {len(self.spider_errors)} spider exception chưa được xử lý."
+            )
         return " ".join(warnings) or None
 
-    def _empty_result_causes(self, job_name: str, stats: Mapping[str, object]) -> list[str]:
+    def _empty_result_causes(
+        self, job_name: str, stats: Mapping[str, object]
+    ) -> list[str]:
         status_403 = int(stats.get("downloader/response_status_count/403", 0) or 0)
         status_429 = int(stats.get("downloader/response_status_count/429", 0) or 0)
         if status_403:
@@ -282,7 +302,9 @@ class TelegramNotificationExtension:
                 "Không có bài mới, toàn bộ URL đã tồn tại, hoặc selector trang listing đã thay đổi."
             ]
         if job_name == "suumo_html":
-            return ["Job links không tạo URL mới hoặc tất cả URL đã được xử lý trước đó."]
+            return [
+                "Job links không tạo URL mới hoặc tất cả URL đã được xử lý trước đó."
+            ]
         return ["Không còn crawl task ở trạng thái pending để tạo batch mới."]
 
     @staticmethod
@@ -314,7 +336,9 @@ class TelegramNotificationExtension:
         if summary.job_name == "suumo_links":
             fields["URL mới"] = summary.new_links
         elif summary.job_name == "suumo_html":
-            fields["URL đã xử lý"] = summary.html_success_count + summary.html_failed_count
+            fields["URL đã xử lý"] = (
+                summary.html_success_count + summary.html_failed_count
+            )
             fields["HTML thành công"] = summary.html_success_count
             fields["HTML thất bại"] = summary.html_failed_count
         elif summary.job_name == "suumo_page":
@@ -359,7 +383,9 @@ class TelegramNotificationExtension:
             target = run_directory / f"{summary.job_name}.json"
             temporary = target.with_suffix(".json.tmp")
             temporary.write_text(
-                json.dumps(asdict(summary), ensure_ascii=False, indent=2, sort_keys=True),
+                json.dumps(
+                    asdict(summary), ensure_ascii=False, indent=2, sort_keys=True
+                ),
                 encoding="utf-8",
             )
             temporary.replace(target)

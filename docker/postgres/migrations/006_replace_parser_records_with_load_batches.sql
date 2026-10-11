@@ -7,13 +7,13 @@
 BEGIN;
 
 ALTER TABLE crawl_tasks
-    DROP CONSTRAINT IF EXISTS fk_crawl_tasks_record_id;
+DROP CONSTRAINT IF EXISTS fk_crawl_tasks_record_id;
 
 DROP INDEX IF EXISTS idx_crawl_tasks_record;
 
 ALTER TABLE crawl_tasks
-    DROP COLUMN IF EXISTS record_id,
-    ADD COLUMN IF NOT EXISTS batch_id BIGINT;
+DROP COLUMN IF EXISTS record_id,
+ADD COLUMN IF NOT EXISTS batch_id BIGINT;
 
 DO $$
 BEGIN
@@ -31,8 +31,8 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_crawl_tasks_batch
-    ON crawl_tasks (batch_id)
-    WHERE batch_id IS NOT NULL;
+ON crawl_tasks (batch_id)
+WHERE batch_id IS NOT NULL;
 
 DROP INDEX IF EXISTS idx_parser_records_source_record_id;
 DROP INDEX IF EXISTS idx_parser_records_task;

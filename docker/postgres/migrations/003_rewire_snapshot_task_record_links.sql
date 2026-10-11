@@ -6,7 +6,7 @@
 BEGIN;
 
 ALTER TABLE crawl_tasks
-    ADD COLUMN IF NOT EXISTS record_id BIGINT;
+ADD COLUMN IF NOT EXISTS record_id BIGINT;
 
 DO $$
 BEGIN
@@ -33,15 +33,15 @@ DROP INDEX IF EXISTS idx_parser_records_source_record;
 DROP INDEX IF EXISTS idx_parser_records_raw_snapshot;
 
 ALTER TABLE raw_snapshots
-    DROP COLUMN IF EXISTS source_id,
-    DROP COLUMN IF EXISTS run_id;
+DROP COLUMN IF EXISTS source_id,
+DROP COLUMN IF EXISTS run_id;
 
 ALTER TABLE crawl_tasks
-    DROP COLUMN IF EXISTS source_id;
+DROP COLUMN IF EXISTS source_id;
 
 ALTER TABLE IF EXISTS parser_records
-    DROP COLUMN IF EXISTS source_id,
-    DROP COLUMN IF EXISTS raw_snapshot_id;
+DROP COLUMN IF EXISTS source_id,
+DROP COLUMN IF EXISTS raw_snapshot_id;
 
 DO $$
 BEGIN
@@ -52,8 +52,8 @@ BEGIN
 END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crawl_tasks_record
-    ON crawl_tasks (record_id)
-    WHERE record_id IS NOT NULL;
+ON crawl_tasks (record_id)
+WHERE record_id IS NOT NULL;
 
 DO $$
 BEGIN

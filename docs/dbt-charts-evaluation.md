@@ -8,12 +8,12 @@
 
 Hai sản phẩm có version độc lập:
 
-| Tên | Version hiện tại khi kiểm tra | Ý nghĩa |
-| --- | --- | --- |
-| dbt Core | 1.11.15 | Runtime Python dùng để build/test/docs project |
-| dbt-postgres | 1.11.0 | Adapter PostgreSQL tương thích dbt Core 1.x |
-| dbt Charts | package `dbt-charts` 0.8.0, beta/pre-1.0 | Engine/CLI `dct` dùng để query và render board |
-| Runtime cũ của repository | dbt Core 1.8.9 | Đã được nâng trong cùng environment lên Core 1.11.15 |
+| Tên                       | Version hiện tại khi kiểm tra            | Ý nghĩa                                              |
+| ------------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| dbt Core                  | 1.11.15                                  | Runtime Python dùng để build/test/docs project       |
+| dbt-postgres              | 1.11.0                                   | Adapter PostgreSQL tương thích dbt Core 1.x          |
+| dbt Charts                | package `dbt-charts` 0.8.0, beta/pre-1.0 | Engine/CLI `dct` dùng để query và render board       |
+| Runtime cũ của repository | dbt Core 1.8.9                           | Đã được nâng trong cùng environment lên Core 1.11.15 |
 
 Wheel `dbt-charts==0.8.0` khai báo `dbt-core>=1.8,<2`; extra PostgreSQL khai
 báo `dbt-postgres>=1.10,<2`. Vì project tiếp tục dùng dbt Core, `dbt`, adapter
@@ -58,10 +58,10 @@ dct: validate → execute → render
 
 dbt Charts có hai phần cần phân biệt:
 
-| Phần | Vai trò | Giấy phép / chi phí |
-| --- | --- | --- |
-| `dbt-charts` + CLI `dct` | Engine, ngôn ngữ YAML, validate, query, render và local server | Mã nguồn mở Apache 2.0 |
-| dbt Charts Cloud | Host board, kết nối Git/warehouse dùng chung, phân quyền, refresh và cộng tác | Dịch vụ hosted; gói Individual hiện miễn phí tối đa 3 cộng tác viên, Team chưa công bố giá hoàn chỉnh |
+| Phần                     | Vai trò                                                                       | Giấy phép / chi phí                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `dbt-charts` + CLI `dct` | Engine, ngôn ngữ YAML, validate, query, render và local server                | Mã nguồn mở Apache 2.0                                                                                |
+| dbt Charts Cloud         | Host board, kết nối Git/warehouse dùng chung, phân quyền, refresh và cộng tác | Dịch vụ hosted; gói Individual hiện miễn phí tối đa 3 cộng tác viên, Team chưa công bố giá hoàn chỉnh |
 
 `dct serve` là server phát triển local. Nó không có đăng nhập hay phân quyền;
 mọi người truy cập được địa chỉ server đều xem được mọi board đang serve. Khi
@@ -70,10 +70,10 @@ dùng Cloud hoặc tự triển khai đầu ra tĩnh theo nhu cầu của hệ t
 
 ### dbt Charts khác dbt Docs thế nào?
 
-| Công cụ | Câu hỏi nó trả lời |
-| --- | --- |
-| dbt Docs | Model nào tồn tại, column có ý nghĩa gì, lineage và catalog ra sao? |
-| dbt Charts | Giá thuê, phân bố, benchmark và KPI kinh doanh đang như thế nào? |
+| Công cụ    | Câu hỏi nó trả lời                                                  |
+| ---------- | ------------------------------------------------------------------- |
+| dbt Docs   | Model nào tồn tại, column có ý nghĩa gì, lineage và catalog ra sao? |
+| dbt Charts | Giá thuê, phân bố, benchmark và KPI kinh doanh đang như thế nào?    |
 
 dbt Docs dùng artifact/index do dbt Core tạo để hiển thị documentation và
 lineage. dbt Charts chạy query lên bảng/view đã build để tạo dashboard BI. Project
@@ -136,14 +136,14 @@ Ví dụ phù hợp với project:
 
 ```yaml
 sources:
-  warehouse:
-    type: dbt_profile
-    profile: japan_analysis
-    target: dev
+    warehouse:
+        type: dbt_profile
+        profile: japan_analysis
+        target: dev
 
 execution:
-  max_workers: 4
-  max_query_duration_seconds: 60
+    max_workers: 4
+    max_query_duration_seconds: 60
 ```
 
 `type: dbt_profile` tái sử dụng `profiles.yml`; không cần lặp credentials trong
@@ -184,15 +184,15 @@ Một SQL query có thể tham chiếu model dbt:
 
 ```yaml
 queries:
-  market_by_ward:
-    sql: |
-      select
-        ward,
-        listing_count,
-        median_rent_jpy
-      from {{ ref('rental_market_price_summary') }}
-      where market_level = 'ward'
-      order by median_rent_jpy desc
+    market_by_ward:
+        sql: |
+            select
+              ward,
+              listing_count,
+              median_rent_jpy
+            from {{ ref('rental_market_price_summary') }}
+            where market_level = 'ward'
+            order by median_rent_jpy desc
 ```
 
 `ref()` và `source()` được giải từ `target/manifest.json`, vì vậy phải chạy
@@ -245,16 +245,16 @@ Variable không tự lọc dữ liệu. Mỗi query phải chủ động nối n
 
 ```yaml
 variables:
-  ward:
-    column: analytics.rental_listing_latest.ward
-    input: multiselect
+    ward:
+        column: analytics.rental_listing_latest.ward
+        input: multiselect
 
 queries:
-  listings:
-    sql: |
-      select *
-      from {{ ref('rental_listing_latest') }}
-      where {{ filter('ward', ward) }}
+    listings:
+        sql: |
+            select *
+            from {{ ref('rental_listing_latest') }}
+            where {{ filter('ward', ward) }}
 ```
 
 `filter()` và `filter_date_range()` bind parameter thay vì ghép string trực
@@ -302,22 +302,22 @@ dbt Charts 0.8.0     → đọc manifest/profile và render board
 
 ### 4.2. Các lệnh chính
 
-| Lệnh | Công dụng |
-| --- | --- |
-| `dct init` | Tạo `charts/`, config và board hướng dẫn |
-| `dct validate [PATH]` | Kiểm tra schema YAML và reference; `--strict` biến warning thành failure |
-| `dct validate --warehouse` | Kiểm tra query bằng cơ chế adapter; PostgreSQL dùng EXPLAIN và không trả output schema |
-| `dct serve` | Chạy local server và hot reload |
-| `dct render BOARD --format ...` | Render HTML, PDF, PNG, SVG, JSON hoặc data |
-| `dct query BOARD QUERY` | Chạy một named query để debug |
-| `dct search QUERY` | Tìm board theo nội dung |
-| `dct impact COLUMN` | Tìm board tham chiếu cột sắp thay đổi |
-| `dct describe` | Mô tả project/board theo metadata đã parse |
-| `dct docs [TOPIC]` | Đọc YAML reference offline |
-| `dct examples` | Xem board mẫu kèm package |
-| `dct migrate` | Nâng file YAML cũ sang syntax hiện tại |
-| `dct init ci` | Sinh GitHub Actions workflow để validate board |
-| `dct skills intro` | Điểm bắt đầu cho coding agent |
+| Lệnh                            | Công dụng                                                                              |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `dct init`                      | Tạo `charts/`, config và board hướng dẫn                                               |
+| `dct validate [PATH]`           | Kiểm tra schema YAML và reference; `--strict` biến warning thành failure               |
+| `dct validate --warehouse`      | Kiểm tra query bằng cơ chế adapter; PostgreSQL dùng EXPLAIN và không trả output schema |
+| `dct serve`                     | Chạy local server và hot reload                                                        |
+| `dct render BOARD --format ...` | Render HTML, PDF, PNG, SVG, JSON hoặc data                                             |
+| `dct query BOARD QUERY`         | Chạy một named query để debug                                                          |
+| `dct search QUERY`              | Tìm board theo nội dung                                                                |
+| `dct impact COLUMN`             | Tìm board tham chiếu cột sắp thay đổi                                                  |
+| `dct describe`                  | Mô tả project/board theo metadata đã parse                                             |
+| `dct docs [TOPIC]`              | Đọc YAML reference offline                                                             |
+| `dct examples`                  | Xem board mẫu kèm package                                                              |
+| `dct migrate`                   | Nâng file YAML cũ sang syntax hiện tại                                                 |
+| `dct init ci`                   | Sinh GitHub Actions workflow để validate board                                         |
+| `dct skills intro`              | Điểm bắt đầu cho coding agent                                                          |
 
 `dct validate` không cần warehouse cho việc kiểm tra cấu trúc. `dct render` chạy
 query thật và có thêm warning theo dữ liệu, ví dụ cột chart toàn null. Lỗi ở một
@@ -397,16 +397,16 @@ Vì syntax còn pre-1.0, khi nâng `dbt-charts` cần đọc changelog, chạy
 
 ### 8.1. Tương thích kỹ thuật
 
-| Hạng mục project | Mức phù hợp | Ghi chú |
-| --- | --- | --- |
-| PostgreSQL 16 | Tốt | Có adapter `dbt-charts[postgresql]` |
-| dbt Core 1.11.15 | Tốt | Build/test/docs và tạo manifest cho dbt Charts |
-| dbt-postgres 1.11.0 | Tốt | Thỏa extra PostgreSQL của dbt Charts 0.8.0 |
-| Model mart/analytics dạng table/view | Tốt | Query SQL trực tiếp, không cần Semantic Layer |
-| Docker Compose local | Tốt | Warehouse đã expose host port `15433` |
-| Git workflow | Tốt | Board, model và docs cùng repository |
-| Airflow | Không phụ thuộc | Airflow tiếp tục build dbt; chart chỉ đọc kết quả sau build |
-| BI production nhiều người | Chưa quyết định | Cần đánh giá Cloud hoặc phương án host/export riêng |
+| Hạng mục project                     | Mức phù hợp     | Ghi chú                                                     |
+| ------------------------------------ | --------------- | ----------------------------------------------------------- |
+| PostgreSQL 16                        | Tốt             | Có adapter `dbt-charts[postgresql]`                         |
+| dbt Core 1.11.15                     | Tốt             | Build/test/docs và tạo manifest cho dbt Charts              |
+| dbt-postgres 1.11.0                  | Tốt             | Thỏa extra PostgreSQL của dbt Charts 0.8.0                  |
+| Model mart/analytics dạng table/view | Tốt             | Query SQL trực tiếp, không cần Semantic Layer               |
+| Docker Compose local                 | Tốt             | Warehouse đã expose host port `15433`                       |
+| Git workflow                         | Tốt             | Board, model và docs cùng repository                        |
+| Airflow                              | Không phụ thuộc | Airflow tiếp tục build dbt; chart chỉ đọc kết quả sau build |
+| BI production nhiều người            | Chưa quyết định | Cần đánh giá Cloud hoặc phương án host/export riêng         |
 
 Khi chạy `dct` trên host, profile hiện tại cần các biến:
 

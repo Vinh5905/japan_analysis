@@ -16,7 +16,9 @@ class SuumoLinksSpider(scrapy.Spider):
     name = "suumo_links"
     allowed_domains = ["suumo.jp"]
 
-    listing_link_selector = "div#js-bukkenList div.cassetteitem-item a.js-cassette_link_href::attr(href)"
+    listing_link_selector = (
+        "div#js-bukkenList div.cassetteitem-item a.js-cassette_link_href::attr(href)"
+    )
     last_page_selector = "div.pagination_set-nav > ol > li:last-child > a::text"
 
     def __init__(self, *args, **kwargs):
@@ -36,7 +38,9 @@ class SuumoLinksSpider(scrapy.Spider):
         if parsed_url.scheme != "https" or parsed_url.hostname != "suumo.jp":
             raise ValueError("SUUMO_SEARCH_URL must be an HTTPS URL on suumo.jp")
         # Discovery and HTML download must use the same file between containers.
-        spider.output_path = Path(crawler.settings.get("SUUMO_HTML_LINKS_FILE", "tmp/suumo_links.txt"))
+        spider.output_path = Path(
+            crawler.settings.get("SUUMO_HTML_LINKS_FILE", "tmp/suumo_links.txt")
+        )
         crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
         crawler.signals.connect(spider.close_spider, signal=signals.spider_closed)
         return spider

@@ -58,7 +58,9 @@ def load_config() -> MinioConfig:
 
     endpoint, secure = _parse_endpoint(endpoint_url)
     buckets = _csv_env("MINIO_DEFAULT_BUCKETS", DEFAULT_BUCKET)
-    main_bucket = os.getenv("MINIO_MAIN_BUCKET", buckets[0] if buckets else DEFAULT_BUCKET)
+    main_bucket = os.getenv(
+        "MINIO_MAIN_BUCKET", buckets[0] if buckets else DEFAULT_BUCKET
+    )
     prefixes = _csv_env("MINIO_MAIN_BUCKET_PREFIXES", ",".join(DEFAULT_PREFIXES))
 
     return MinioConfig(
@@ -69,7 +71,9 @@ def load_config() -> MinioConfig:
         buckets=buckets,
         main_bucket=main_bucket,
         # S3-style folders are prefixes, so keep a trailing slash for consistency.
-        prefixes=tuple(prefix if prefix.endswith("/") else f"{prefix}/" for prefix in prefixes),
+        prefixes=tuple(
+            prefix if prefix.endswith("/") else f"{prefix}/" for prefix in prefixes
+        ),
     )
 
 

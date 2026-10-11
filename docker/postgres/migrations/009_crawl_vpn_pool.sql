@@ -14,15 +14,19 @@ CREATE TABLE IF NOT EXISTS crawl_vpns (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-ALTER TABLE crawl_runs ADD COLUMN IF NOT EXISTS vpn_id BIGINT REFERENCES crawl_vpns(vpn_id);
+ALTER TABLE crawl_runs ADD COLUMN IF NOT EXISTS vpn_id BIGINT REFERENCES crawl_vpns (
+    vpn_id
+);
 ALTER TABLE crawl_runs ADD COLUMN IF NOT EXISTS vpn_snapshot JSONB;
 
 CREATE TABLE IF NOT EXISTS crawl_vpn_attempts (
     attempt_id BIGSERIAL PRIMARY KEY,
-    run_id BIGINT NOT NULL REFERENCES crawl_runs(run_id),
-    vpn_id BIGINT NOT NULL REFERENCES crawl_vpns(vpn_id),
+    run_id BIGINT NOT NULL REFERENCES crawl_runs (run_id),
+    vpn_id BIGINT NOT NULL REFERENCES crawl_vpns (vpn_id),
     snapshot JSONB NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','success','failed','interrupted')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'success', 'failed', 'interrupted')
+    ),
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at TIMESTAMPTZ,
     UNIQUE (run_id, vpn_id)
@@ -30,17 +34,22 @@ CREATE TABLE IF NOT EXISTS crawl_vpn_attempts (
 
 CREATE TABLE IF NOT EXISTS crawl_vpn_requests (
     request_id UUID PRIMARY KEY,
-    run_id BIGINT NOT NULL REFERENCES crawl_runs(run_id),
-    vpn_id BIGINT NOT NULL REFERENCES crawl_vpns(vpn_id),
+    run_id BIGINT NOT NULL REFERENCES crawl_runs (run_id),
+    vpn_id BIGINT NOT NULL REFERENCES crawl_vpns (vpn_id),
     stage TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS crawl_vpn_requests_run_idx ON crawl_vpn_requests(run_id);
-CREATE INDEX IF NOT EXISTS crawl_vpn_attempts_pending_idx ON crawl_vpn_attempts(run_id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS crawl_vpn_requests_run_idx ON crawl_vpn_requests (run_id);
+CREATE INDEX IF NOT EXISTS crawl_vpn_attempts_pending_idx ON crawl_vpn_attempts (
+    run_id
+) WHERE status
+= 'pending';
 
 -- A single idempotent transaction records each downloader attempt and its counter.
 -- Historical HTML totals cannot be backfilled into HTTP request counts.
-CREATE OR REPLACE FUNCTION record_crawl_vpn_request(p_request UUID, p_run BIGINT, p_vpn BIGINT, p_stage TEXT)
+CREATE OR REPLACE FUNCTION record_crawl_vpn_request(
+    p_request UUID, p_run BIGINT, p_vpn BIGINT, p_stage TEXT
+)
 RETURNS BOOLEAN LANGUAGE plpgsql AS $$
 DECLARE added INTEGER;
 BEGIN

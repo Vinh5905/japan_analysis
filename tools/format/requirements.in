@@ -1,0 +1,4 @@
+ruff==0.17.0
+shandy-sqlfmt[jinjafmt]==0.32.0
+sqlfluff==4.4.0
+pre-commit==4.6.2

@@ -1,0 +1,17 @@
+[sqlfluff]
+dialect = postgres
+templater = raw
+max_line_length = 88
+# Only whitespace/layout/case rules; no semantic rewrites.
+rules = LT01,LT02,LT04,LT05,LT06,LT07,LT08,LT09,LT10,LT11,LT12,LT13,LT14,CP01
+large_file_skip_byte_limit = 0
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:layout:type:column_definition]
+line_position = alone:strict

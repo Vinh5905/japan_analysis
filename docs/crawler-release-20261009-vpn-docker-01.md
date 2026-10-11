@@ -30,19 +30,19 @@ managed rerun theo ward/run. Không gọi SUUMO trong các bài kiểm tra.
 QA VPN thật trên VPS trước deploy dùng staging/runtime riêng, tạm pause bot/timer
 và giữ shared lock; không tạo crawl_run hoặc thay VPN stats:
 
-| Kiểm tra | Kết quả |
-|---|---|
-| Profile 110.163.135.206:1194 | Chưa khỏe trong cửa sổ trial |
-| Profile 115.179.206.241:443 | AUTH_FAILED, không cấp quyền chạy worker |
-| Profile 115.36.204.213:1464 | Ba checks khỏe liên tiếp |
-| IP worker / host | 115.36.204.213 / 103.249.116.192 |
-| Worker đọc PostgreSQL và 64 byte object MinIO | Đạt |
-| SSH mới không multiplex khi VPN bật | Đạt |
-| PostgreSQL protocol qua SSH tunnel | Đạt |
-| MinIO API health và console qua SSH tunnel | HTTP 200 |
-| Xóa sidecar, worker vẫn giữ namespace | Direct Internet bị chặn |
-| Host routing fingerprint | Giữ nguyên |
-| Tổng run/URL, VPN stats, queue và giờ chạy | Giữ nguyên |
+| Kiểm tra                                      | Kết quả                                  |
+| --------------------------------------------- | ---------------------------------------- |
+| Profile 110.163.135.206:1194                  | Chưa khỏe trong cửa sổ trial             |
+| Profile 115.179.206.241:443                   | AUTH_FAILED, không cấp quyền chạy worker |
+| Profile 115.36.204.213:1464                   | Ba checks khỏe liên tiếp                 |
+| IP worker / host                              | 115.36.204.213 / 103.249.116.192         |
+| Worker đọc PostgreSQL và 64 byte object MinIO | Đạt                                      |
+| SSH mới không multiplex khi VPN bật           | Đạt                                      |
+| PostgreSQL protocol qua SSH tunnel            | Đạt                                      |
+| MinIO API health và console qua SSH tunnel    | HTTP 200                                 |
+| Xóa sidecar, worker vẫn giữ namespace         | Direct Internet bị chặn                  |
+| Host routing fingerprint                      | Giữ nguyên                               |
+| Tổng run/URL, VPN stats, queue và giờ chạy    | Giữ nguyên                               |
 
 Kết quả QA giữ tại `/opt/suumo-crawler/tmp/docker-vpn-qa-70f4da7f61/result.json`;
 private env/config QA đã xóa sau cleanup. Kết quả checksum/status tại local

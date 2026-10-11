@@ -7,9 +7,9 @@
 BEGIN;
 
 ALTER TABLE crawl_runs
-    DROP COLUMN IF EXISTS success_count,
-    DROP COLUMN IF EXISTS failed_count,
-    DROP COLUMN IF EXISTS new_urls_file_path;
+DROP COLUMN IF EXISTS success_count,
+DROP COLUMN IF EXISTS failed_count,
+DROP COLUMN IF EXISTS new_urls_file_path;
 
 COMMIT;
 

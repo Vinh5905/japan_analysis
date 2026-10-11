@@ -142,7 +142,14 @@ def run_suumo_html(
         cwd=PROJECT_ROOT,
         check=False,
         text=True,
-        env={**os.environ, "SUUMO_RUN_ID": str(run_id), "TELEGRAM_PIPELINE_RUN_ID": str(run_id), "SUUMO_RUN_AREA": area_label} if run_id else dict(os.environ),
+        env={
+            **os.environ,
+            "SUUMO_RUN_ID": str(run_id),
+            "TELEGRAM_PIPELINE_RUN_ID": str(run_id),
+            "SUUMO_RUN_AREA": area_label,
+        }
+        if run_id
+        else dict(os.environ),
     )
 
 
@@ -205,7 +212,8 @@ def write_report(report_dir: Path, report: dict[str, object]) -> tuple[Path, Pat
     )
     failed_ids = report["failed_again_original_task_ids"]
     ids_path.write_text(
-        "\n".join(str(task_id) for task_id in failed_ids) + ("\n" if failed_ids else ""),
+        "\n".join(str(task_id) for task_id in failed_ids)
+        + ("\n" if failed_ids else ""),
         encoding="utf-8",
     )
     return json_path, ids_path
@@ -219,31 +227,50 @@ def main() -> int:
     exit_code = 0
     try:
         context_run, context_area = None, None
-        required = os.environ.get('SUUMO_REQUIRE_VPN_CONTEXT', '').lower() in {'true','1','yes'}
+        required = os.environ.get("SUUMO_REQUIRE_VPN_CONTEXT", "").lower() in {
+            "true",
+            "1",
+            "yes",
+        }
         if required and not args.dry_run:
-            rid, vid = os.environ.get('SUUMO_RUN_ID',''), os.environ.get('SUUMO_VPN_ID','')
+            rid, vid = (
+                os.environ.get("SUUMO_RUN_ID", ""),
+                os.environ.get("SUUMO_VPN_ID", ""),
+            )
             if not rid.isdigit() or not vid.isdigit():
-                raise RuntimeError('Use the host runner --rerun-failed-html --area-id; verified VPN context required')
+                raise RuntimeError(
+                    "Use the host runner --rerun-failed-html --area-id; verified VPN context required"
+                )
             with repository.connection.cursor() as cursor:
-                cursor.execute("""SELECT r.run_id,r.area_id FROM crawl_runs r JOIN crawl_vpn_attempts a
+                cursor.execute(
+                    """SELECT r.run_id,r.area_id FROM crawl_runs r JOIN crawl_vpn_attempts a
                   ON a.run_id=r.run_id AND a.vpn_id=r.vpn_id WHERE r.run_id=%s AND r.vpn_id=%s
                   AND r.source_id=%s AND r.pipeline_status='running' AND a.status='success'
                   AND r.cleanup_confirmed_at IS NULL AND r.finished_at IS NULL
-                  AND r.area_id IS NOT NULL""",(int(rid),int(vid),args.source_id))
+                  AND r.area_id IS NOT NULL""",
+                    (int(rid), int(vid), args.source_id),
+                )
                 context = cursor.fetchone()
             if not context:
-                raise RuntimeError('Rerun VPN context is invalid or closed')
+                raise RuntimeError("Rerun VPN context is invalid or closed")
             context_run, context_area = context
-        tasks = repository.fetch_failed_crawl_tasks(source_id=args.source_id, limit=args.limit, area_id=context_area)
+        tasks = repository.fetch_failed_crawl_tasks(
+            source_id=args.source_id, limit=args.limit, area_id=context_area
+        )
         groups = {}
         # Group by the original run's stable ward identity, never infer from URL.
         with repository.connection.cursor() as cursor:
-            cursor.execute("SELECT run_id,area_id,area_snapshot FROM crawl_runs WHERE run_id=ANY(%s)", ([t.run_id for t in tasks],))
+            cursor.execute(
+                "SELECT run_id,area_id,area_snapshot FROM crawl_runs WHERE run_id=ANY(%s)",
+                ([t.run_id for t in tasks],),
+            )
             scopes = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
         for task in tasks:
             area_id, snapshot = scopes[task.run_id]
             if area_id is None:
-                raise RuntimeError("Failed task has no ward; apply the confirmed legacy backfill first")
+                raise RuntimeError(
+                    "Failed task has no ward; apply the confirmed legacy backfill first"
+                )
             if context_area is not None and area_id != context_area:
                 continue
             groups.setdefault(area_id, []).append(task)
@@ -251,7 +278,10 @@ def main() -> int:
             print("No failed crawl_tasks found for manual rerun.")
         for area_id, failed_tasks in groups.items():
             selected, task_groups = dedupe_failed_tasks(failed_tasks)
-            links_file = Path(args.links_file).with_name(f"area_{area_id}_{__import__('uuid').uuid4().hex}_" + Path(args.links_file).name)
+            links_file = Path(args.links_file).with_name(
+                f"area_{area_id}_{__import__('uuid').uuid4().hex}_"
+                + Path(args.links_file).name
+            )
             write_links_file(links_file, selected)
             manual_run_id, code, results = None, None, []
             if not args.dry_run:
@@ -261,24 +291,46 @@ def main() -> int:
                     if context_run is not None:
                         manual_run_id = context_run
                     else:
-                        cursor.execute("""INSERT INTO crawl_runs(source_id,area_id,area_snapshot,created_by,pipeline_status)
+                        cursor.execute(
+                            """INSERT INTO crawl_runs(source_id,area_id,area_snapshot,created_by,pipeline_status)
                           SELECT source_id,area_id,jsonb_build_object('area_id',area_id,'prefecture',prefecture,
                            'district',district,'municipality',municipality,'ward',ward,'display_name',display_name,'sc',sc),
-                           'manual','running' FROM crawl_areas WHERE area_id=%s AND source_id=%s RETURNING run_id""", (area_id,args.source_id))
+                           'manual','running' FROM crawl_areas WHERE area_id=%s AND source_id=%s RETURNING run_id""",
+                            (area_id, args.source_id),
+                        )
                         manual_run_id = cursor.fetchone()[0]
                 snapshot = scopes[failed_tasks[0].run_id][1] or {}
-                label = " · ".join(str(snapshot[k]) for k in ("prefecture","district","municipality","ward") if snapshot.get(k))
-                result = run_suumo_html(links_file,args.source_id,args.loglevel,manual_run_id,label)
+                label = " · ".join(
+                    str(snapshot[k])
+                    for k in ("prefecture", "district", "municipality", "ward")
+                    if snapshot.get(k)
+                )
+                result = run_suumo_html(
+                    links_file, args.source_id, args.loglevel, manual_run_id, label
+                )
                 code = result.returncode
                 exit_code = exit_code or code
                 results = repository.fetch_task_results_for_run(manual_run_id)
                 if context_run is None:
                     with repository.connection.cursor() as cursor:
-                        cursor.execute("UPDATE crawl_runs SET pipeline_status=NULL WHERE run_id=%s", (manual_run_id,))
-            report = build_report(manual_run_id,args.source_id,selected,task_groups,results,code,args.dry_run)
-            report['area_id'] = area_id
+                        cursor.execute(
+                            "UPDATE crawl_runs SET pipeline_status=NULL WHERE run_id=%s",
+                            (manual_run_id,),
+                        )
+            report = build_report(
+                manual_run_id,
+                args.source_id,
+                selected,
+                task_groups,
+                results,
+                code,
+                args.dry_run,
+            )
+            report["area_id"] = area_id
             json_path, ids_path = write_report(Path(args.report_dir), report)
-            print(f"Ward {area_id}; HTML run {manual_run_id}; report {json_path}; IDs {ids_path}")
+            print(
+                f"Ward {area_id}; HTML run {manual_run_id}; report {json_path}; IDs {ids_path}"
+            )
             if not args.keep_links_file:
                 links_file.unlink(missing_ok=True)
     finally:

@@ -1,74 +1,74 @@
 name: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}
 
 services:
-  python:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.4-slim-bookworm}
-    image: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python:local
-    container_name: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python
-    restart: unless-stopped
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      TZ: ${TZ:-Asia/Ho_Chi_Minh}
-      PYTHONPATH: ${PYTHONPATH:-/app/src}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
-      POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
-      MINIO_ENDPOINT_URL: http://${MINIO_HOST:-minio}:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-      MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
-      MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
-      MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
-      SUUMO_SOURCE_ID: ${SUUMO_SOURCE_ID:-1}
-      SUUMO_SOURCE_BASE_URL: ${SUUMO_SOURCE_BASE_URL:-https://suumo.jp}
-      SUUMO_SEARCH_URL: ${SUUMO_SEARCH_URL:-}
-      SUUMO_RUN_CREATED_BY: ${SUUMO_RUN_CREATED_BY:-schedule}
-      SUUMO_HTML_LINKS_FILE: ${SUUMO_HTML_LINKS_FILE:-tmp/suumo_links.txt}
-      SUUMO_HTML_LINK_LIMIT: ${SUUMO_HTML_LINK_LIMIT:-0}
-      SUUMO_PAGE_TASK_LIMIT: ${SUUMO_PAGE_TASK_LIMIT:-0}
-      SUUMO_PAGE_BATCH_SIZE: ${SUUMO_PAGE_BATCH_SIZE:-100}
-      SUUMO_PAGE_BATCH_SECONDS: ${SUUMO_PAGE_BATCH_SECONDS:-300}
-      SUUMO_CONCURRENT_REQUESTS: ${SUUMO_CONCURRENT_REQUESTS:-2}
-      SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN: ${SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN:-1}
-      SUUMO_AUTOTHROTTLE_START_DELAY: ${SUUMO_AUTOTHROTTLE_START_DELAY:-3}
-      SUUMO_AUTOTHROTTLE_MAX_DELAY: ${SUUMO_AUTOTHROTTLE_MAX_DELAY:-15}
-      SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY: ${SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY:-0.5}
-      AIRFLOW_NOTIFY_ENABLED: ${AIRFLOW_NOTIFY_ENABLED:-false}
-      AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://airflow-webserver:8080}
-      AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-suumo_load_to_warehouse}
-      AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
-      AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin_change_me}
-      AIRFLOW_NOTIFY_TIMEOUT_SECONDS: ${AIRFLOW_NOTIFY_TIMEOUT_SECONDS:-10}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      TELEGRAM_HOSTNAME: ${TELEGRAM_HOSTNAME:-}
-      TELEGRAM_PIPELINE_RUN_ID: ${TELEGRAM_PIPELINE_RUN_ID:-}
-      TELEGRAM_SUMMARY_DIR: /app/crawler/tmp/telegram
-    ports:
-      - "${PYTHON_SERVICE_PORT:-8000}:8000"
-    volumes:
-      - .:/app
-      - python_cache:/root/.cache
-    networks:
-      - shared_net
-    healthcheck:
-      test: ["CMD", "python-healthcheck"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+    python:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+                PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.4-slim-bookworm}
+        image: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python:local
+        container_name: ${CRAWLER_COMPOSE_PROJECT_NAME:-suumo_source_crawler}_python
+        restart: unless-stopped
+        environment:
+            APP_ENV: ${APP_ENV:-local}
+            TZ: ${TZ:-Asia/Ho_Chi_Minh}
+            PYTHONPATH: ${PYTHONPATH:-/app/src}
+            POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+            POSTGRES_PORT: 5432
+            POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+            POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+            MINIO_ENDPOINT_URL: http://${MINIO_HOST:-minio}:9000
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+            MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
+            MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
+            MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
+            SUUMO_SOURCE_ID: ${SUUMO_SOURCE_ID:-1}
+            SUUMO_SOURCE_BASE_URL: ${SUUMO_SOURCE_BASE_URL:-https://suumo.jp}
+            SUUMO_SEARCH_URL: ${SUUMO_SEARCH_URL:-}
+            SUUMO_RUN_CREATED_BY: ${SUUMO_RUN_CREATED_BY:-schedule}
+            SUUMO_HTML_LINKS_FILE: ${SUUMO_HTML_LINKS_FILE:-tmp/suumo_links.txt}
+            SUUMO_HTML_LINK_LIMIT: ${SUUMO_HTML_LINK_LIMIT:-0}
+            SUUMO_PAGE_TASK_LIMIT: ${SUUMO_PAGE_TASK_LIMIT:-0}
+            SUUMO_PAGE_BATCH_SIZE: ${SUUMO_PAGE_BATCH_SIZE:-100}
+            SUUMO_PAGE_BATCH_SECONDS: ${SUUMO_PAGE_BATCH_SECONDS:-300}
+            SUUMO_CONCURRENT_REQUESTS: ${SUUMO_CONCURRENT_REQUESTS:-2}
+            SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN: ${SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN:-1}
+            SUUMO_AUTOTHROTTLE_START_DELAY: ${SUUMO_AUTOTHROTTLE_START_DELAY:-3}
+            SUUMO_AUTOTHROTTLE_MAX_DELAY: ${SUUMO_AUTOTHROTTLE_MAX_DELAY:-15}
+            SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY: ${SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY:-0.5}
+            AIRFLOW_NOTIFY_ENABLED: ${AIRFLOW_NOTIFY_ENABLED:-false}
+            AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://airflow-webserver:8080}
+            AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-suumo_load_to_warehouse}
+            AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
+            AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin_change_me}
+            AIRFLOW_NOTIFY_TIMEOUT_SECONDS: ${AIRFLOW_NOTIFY_TIMEOUT_SECONDS:-10}
+            TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+            TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+            TELEGRAM_HOSTNAME: ${TELEGRAM_HOSTNAME:-}
+            TELEGRAM_PIPELINE_RUN_ID: ${TELEGRAM_PIPELINE_RUN_ID:-}
+            TELEGRAM_SUMMARY_DIR: /app/crawler/tmp/telegram
+        ports:
+            - "${PYTHON_SERVICE_PORT:-8000}:8000"
+        volumes:
+            - .:/app
+            - python_cache:/root/.cache
+        networks:
+            - shared_net
+        healthcheck:
+            test: ["CMD", "python-healthcheck"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
 
 volumes:
-  python_cache:
-    driver: local
+    python_cache:
+        driver: local
 
 networks:
-  shared_net:
-    name: ${SHARED_NETWORK_NAME:-crawler_shared_net}
-    external: true
+    shared_net:
+        name: ${SHARED_NETWORK_NAME:-crawler_shared_net}
+        external: true

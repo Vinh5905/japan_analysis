@@ -23,6 +23,9 @@ __pycache__/
 *$py.class
 .Python
 .venv/
+.venv-format/
+.cache-format/
+node_modules/
 venv/
 env/
 .pytest_cache/

@@ -111,7 +111,9 @@ def fetch_task_batches(task_ids: list[int]) -> dict[int, dict[str, Any]]:
     return result
 
 
-def download_batch_records(file_path: str, compression: str | None) -> list[dict[str, Any]]:
+def download_batch_records(
+    file_path: str, compression: str | None
+) -> list[dict[str, Any]]:
     """Download and decode one load_batches JSON file from MinIO."""
 
     bucket_name, object_name = split_storage_path(file_path)

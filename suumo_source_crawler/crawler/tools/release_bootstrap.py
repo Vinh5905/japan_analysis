@@ -135,7 +135,9 @@ def bundled_file(relative_path: Sequence[str], env_name: str | None = None) -> P
             return candidate
 
     searched = ", ".join(str(candidate) for candidate in candidates)
-    raise FileNotFoundError(f"Could not find {'/'.join(relative_path)}. Searched: {searched}")
+    raise FileNotFoundError(
+        f"Could not find {'/'.join(relative_path)}. Searched: {searched}"
+    )
 
 
 def schema_state() -> tuple[set[str], set[str]]:
@@ -193,7 +195,9 @@ def ensure_database_schema(force_reset: bool, run_migrations: bool) -> None:
     present, missing = schema_state()
 
     if force_reset:
-        print("Force reset requested. The full init SQL will drop and recreate crawler tables.")
+        print(
+            "Force reset requested. The full init SQL will drop and recreate crawler tables."
+        )
         run_psql_file(init_sql)
     elif not present:
         print("No crawler metadata tables found. Creating fresh schema.")

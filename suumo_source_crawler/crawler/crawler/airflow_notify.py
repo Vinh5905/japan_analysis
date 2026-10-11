@@ -31,7 +31,9 @@ def load_airflow_notify_config() -> AirflowNotifyConfig:
 
     return AirflowNotifyConfig(
         enabled=parse_bool(os.getenv("AIRFLOW_NOTIFY_ENABLED", "false")),
-        api_base_url=os.getenv("AIRFLOW_API_BASE_URL", "http://airflow-webserver:8080").rstrip("/"),
+        api_base_url=os.getenv(
+            "AIRFLOW_API_BASE_URL", "http://airflow-webserver:8080"
+        ).rstrip("/"),
         dag_id=os.getenv("AIRFLOW_DAG_ID", "suumo_load_to_warehouse"),
         username=os.getenv("AIRFLOW_USERNAME", "admin"),
         password=os.getenv("AIRFLOW_PASSWORD", "admin_change_me"),

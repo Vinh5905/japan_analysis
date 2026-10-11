@@ -5,237 +5,241 @@ name: ${RELEASE_COMPOSE_PROJECT_NAME:-suumo_crawler_release}
 # files are copied into the image at build time.
 
 x-crawler-env: &crawler-env
-  APP_ENV: ${APP_ENV:-release}
-  TZ: ${TZ:-Asia/Ho_Chi_Minh}
-  PYTHONPATH: /app/crawler:/app
-  POSTGRES_HOST: postgres
-  POSTGRES_PORT: 5432
-  POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
-  POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
-  MINIO_HOST: minio
-  MINIO_API_PORT: 9000
-  MINIO_ENDPOINT_URL: http://minio:9000
-  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-  MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
-  MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
-  MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
-  SUUMO_RUN_ID: ${SUUMO_RUN_ID:-}
-  SUUMO_RUN_AREA: ${SUUMO_RUN_AREA:-}
-  SUUMO_VPN_ID: ${SUUMO_VPN_ID:-}
-  SUUMO_VPN_FILENAME: ${SUUMO_VPN_FILENAME:-}
-  SUUMO_REQUIRE_VPN_CONTEXT: "true"
-  SUUMO_SOURCE_ID: ${SUUMO_SOURCE_ID:-1}
-  SUUMO_SOURCE_BASE_URL: ${SUUMO_SOURCE_BASE_URL:-https://suumo.jp}
-  SUUMO_SEARCH_URL: ${SUUMO_SEARCH_URL:-}
-  SUUMO_CONCURRENT_REQUESTS: ${SUUMO_CONCURRENT_REQUESTS:-2}
-  SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN: ${SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN:-1}
-  SUUMO_AUTOTHROTTLE_START_DELAY: ${SUUMO_AUTOTHROTTLE_START_DELAY:-3}
-  SUUMO_AUTOTHROTTLE_MAX_DELAY: ${SUUMO_AUTOTHROTTLE_MAX_DELAY:-15}
-  SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY: ${SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY:-0.5}
-  SUUMO_RUN_CREATED_BY: ${SUUMO_RUN_CREATED_BY:-schedule}
-  SUUMO_HTML_LINKS_FILE: ${SUUMO_HTML_LINKS_FILE:-tmp/suumo_links.txt}
-  SUUMO_HTML_LINK_LIMIT: ${SUUMO_HTML_LINK_LIMIT:-0}
-  SUUMO_PAGE_TASK_LIMIT: ${SUUMO_PAGE_TASK_LIMIT:-0}
-  SUUMO_PAGE_BATCH_SIZE: ${SUUMO_PAGE_BATCH_SIZE:-100}
-  SUUMO_PAGE_BATCH_SECONDS: ${SUUMO_PAGE_BATCH_SECONDS:-300}
-  AIRFLOW_NOTIFY_ENABLED: ${AIRFLOW_NOTIFY_ENABLED:-false}
-  AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://airflow-webserver:8080}
-  AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-suumo_load_to_warehouse}
-  AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
-  AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin_change_me}
-  AIRFLOW_NOTIFY_TIMEOUT_SECONDS: ${AIRFLOW_NOTIFY_TIMEOUT_SECONDS:-10}
-  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-  TELEGRAM_HOSTNAME: ${TELEGRAM_HOSTNAME:-}
-  TELEGRAM_PIPELINE_RUN_ID: ${TELEGRAM_PIPELINE_RUN_ID:-}
-  TELEGRAM_SUMMARY_DIR: /app/crawler/tmp/telegram
+    APP_ENV: ${APP_ENV:-release}
+    TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    PYTHONPATH: /app/crawler:/app
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+    POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+    MINIO_HOST: minio
+    MINIO_API_PORT: 9000
+    MINIO_ENDPOINT_URL: http://minio:9000
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+    MINIO_DEFAULT_BUCKETS: ${MINIO_DEFAULT_BUCKETS:-suumo}
+    MINIO_MAIN_BUCKET: ${MINIO_MAIN_BUCKET:-suumo}
+    MINIO_MAIN_BUCKET_PREFIXES: ${MINIO_MAIN_BUCKET_PREFIXES:-data/,page_source/,image/}
+    SUUMO_RUN_ID: ${SUUMO_RUN_ID:-}
+    SUUMO_RUN_AREA: ${SUUMO_RUN_AREA:-}
+    SUUMO_VPN_ID: ${SUUMO_VPN_ID:-}
+    SUUMO_VPN_FILENAME: ${SUUMO_VPN_FILENAME:-}
+    SUUMO_REQUIRE_VPN_CONTEXT: "true"
+    SUUMO_SOURCE_ID: ${SUUMO_SOURCE_ID:-1}
+    SUUMO_SOURCE_BASE_URL: ${SUUMO_SOURCE_BASE_URL:-https://suumo.jp}
+    SUUMO_SEARCH_URL: ${SUUMO_SEARCH_URL:-}
+    SUUMO_CONCURRENT_REQUESTS: ${SUUMO_CONCURRENT_REQUESTS:-2}
+    SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN: ${SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN:-1}
+    SUUMO_AUTOTHROTTLE_START_DELAY: ${SUUMO_AUTOTHROTTLE_START_DELAY:-3}
+    SUUMO_AUTOTHROTTLE_MAX_DELAY: ${SUUMO_AUTOTHROTTLE_MAX_DELAY:-15}
+    SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY: ${SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY:-0.5}
+    SUUMO_RUN_CREATED_BY: ${SUUMO_RUN_CREATED_BY:-schedule}
+    SUUMO_HTML_LINKS_FILE: ${SUUMO_HTML_LINKS_FILE:-tmp/suumo_links.txt}
+    SUUMO_HTML_LINK_LIMIT: ${SUUMO_HTML_LINK_LIMIT:-0}
+    SUUMO_PAGE_TASK_LIMIT: ${SUUMO_PAGE_TASK_LIMIT:-0}
+    SUUMO_PAGE_BATCH_SIZE: ${SUUMO_PAGE_BATCH_SIZE:-100}
+    SUUMO_PAGE_BATCH_SECONDS: ${SUUMO_PAGE_BATCH_SECONDS:-300}
+    AIRFLOW_NOTIFY_ENABLED: ${AIRFLOW_NOTIFY_ENABLED:-false}
+    AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://airflow-webserver:8080}
+    AIRFLOW_DAG_ID: ${AIRFLOW_DAG_ID:-suumo_load_to_warehouse}
+    AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-admin}
+    AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-admin_change_me}
+    AIRFLOW_NOTIFY_TIMEOUT_SECONDS: ${AIRFLOW_NOTIFY_TIMEOUT_SECONDS:-10}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    TELEGRAM_HOSTNAME: ${TELEGRAM_HOSTNAME:-}
+    TELEGRAM_PIPELINE_RUN_ID: ${TELEGRAM_PIPELINE_RUN_ID:-}
+    TELEGRAM_SUMMARY_DIR: /app/crawler/tmp/telegram
 
 x-crawler-service: &crawler-service
-  image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
-  mem_limit: ${CRAWLER_MEM_LIMIT:-512m}
-  cpus: "${CRAWLER_CPUS:-0.50}"
-  pids_limit: ${CRAWLER_PIDS_LIMIT:-256}
-  environment:
-    <<: *crawler-env
-  volumes:
-    - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
+    image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
+    mem_limit: ${CRAWLER_MEM_LIMIT:-512m}
+    cpus: "${CRAWLER_CPUS:-0.50}"
+    pids_limit: ${CRAWLER_PIDS_LIMIT:-256}
+    environment:
+        <<: *crawler-env
+    volumes:
+        - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
 
 x-vpn-crawler: &vpn-crawler
-  <<: *crawler-service
-  network_mode: service:vpn
-  cap_drop: [ALL]
-  security_opt: [no-new-privileges:true]
-  volumes:
-    - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
-    - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
-    - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
+    <<: *crawler-service
+    network_mode: service:vpn
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+        - ${CRAWLER_TMP_DIR:-./tmp}:/app/crawler/tmp
+        - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
+        - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
 
 services:
-  vpn:
-    image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
-    entrypoint: [python, /app/vpn/container_vpn.py]
-    command: []
-    profiles: [vpn, tasks]
-    restart: "no"
-    cap_drop: [ALL]
-    cap_add: [NET_ADMIN]
-    devices: [/dev/net/tun:/dev/net/tun]
-    security_opt: [no-new-privileges:true]
-    sysctls:
-      net.ipv6.conf.all.disable_ipv6: "1"
-      net.ipv6.conf.default.disable_ipv6: "1"
-    mem_limit: ${VPN_MEM_LIMIT:-128m}
-    cpus: "${VPN_CPUS:-0.20}"
-    pids_limit: 64
-    stop_grace_period: 15s
-    volumes:
-      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}:/vpn:ro
-      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
-      - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
-    networks: [release_net]
-    healthcheck:
-      test: [CMD, python, /app/vpn/container_vpn.py, --health]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    vpn:
+        image: ${SUUMO_CRAWLER_IMAGE:-kevinpham9257/suumo-crawler}:${SUUMO_CRAWLER_TAG:-latest}
+        entrypoint: [python, /app/vpn/container_vpn.py]
+        command: []
+        profiles: [vpn, tasks]
+        restart: "no"
+        cap_drop: [ALL]
+        cap_add: [NET_ADMIN]
+        devices: [/dev/net/tun:/dev/net/tun]
+        security_opt: [no-new-privileges:true]
+        sysctls:
+            net.ipv6.conf.all.disable_ipv6: "1"
+            net.ipv6.conf.default.disable_ipv6: "1"
+        mem_limit: ${VPN_MEM_LIMIT:-128m}
+        cpus: "${VPN_CPUS:-0.20}"
+        pids_limit: 64
+        stop_grace_period: 15s
+        volumes:
+            - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}:/vpn:ro
+            - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/hosts:/etc/hosts:ro
+            - ${VPN_RUNTIME_DIR:-./state/vpn-runtime}/resolv.conf:/etc/resolv.conf:ro
+        networks: [release_net]
+        healthcheck:
+            test: [CMD, python, /app/vpn/container_vpn.py, --health]
+            interval: 10s
+            timeout: 5s
+            retries: 3
 
-  postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16.3-bookworm}
-    restart: unless-stopped
-    mem_limit: ${POSTGRES_MEM_LIMIT:-384m}
-    cpus: "${POSTGRES_CPUS:-0.30}"
-    pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
-    environment:
-      TZ: ${TZ:-Asia/Ho_Chi_Minh}
-      POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
-      POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
-      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:---encoding=UTF8 --locale=C}
-      PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - release_postgres_data:/var/lib/postgresql/data
-    networks:
-      - release_net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 20s
+    postgres:
+        image: ${POSTGRES_IMAGE:-postgres:16.3-bookworm}
+        restart: unless-stopped
+        mem_limit: ${POSTGRES_MEM_LIMIT:-384m}
+        cpus: "${POSTGRES_CPUS:-0.30}"
+        pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
+        environment:
+            TZ: ${TZ:-Asia/Ho_Chi_Minh}
+            POSTGRES_DB: ${POSTGRES_DB:-suumo_crawler}
+            POSTGRES_USER: ${POSTGRES_USER:-suumo_user}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suumo_password_change_me}
+            POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:---encoding=UTF8 --locale=C}
+            PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
+        ports:
+            - "${POSTGRES_PORT:-5432}:5432"
+        volumes:
+            - release_postgres_data:/var/lib/postgresql/data
+        networks:
+            - release_net
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -h 127.0.0.1',
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 8
+            start_period: 20s
 
-  minio:
-    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-07-16T23-46-41Z}
-    restart: unless-stopped
-    mem_limit: ${MINIO_MEM_LIMIT:-512m}
-    cpus: "${MINIO_CPUS:-0.30}"
-    pids_limit: ${MINIO_PIDS_LIMIT:-256}
-    command: server /data --console-address ":9001"
-    environment:
-      TZ: ${TZ:-Asia/Ho_Chi_Minh}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - release_minio_data:/data
-    networks:
-      - release_net
-    healthcheck:
-      test: ["CMD-SHELL", "mc ready local >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-      start_period: 15s
+    minio:
+        image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-07-16T23-46-41Z}
+        restart: unless-stopped
+        mem_limit: ${MINIO_MEM_LIMIT:-512m}
+        cpus: "${MINIO_CPUS:-0.30}"
+        pids_limit: ${MINIO_PIDS_LIMIT:-256}
+        command: server /data --console-address ":9001"
+        environment:
+            TZ: ${TZ:-Asia/Ho_Chi_Minh}
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_change_me}
+        ports:
+            - "${MINIO_API_PORT:-9000}:9000"
+            - "${MINIO_CONSOLE_PORT:-9001}:9001"
+        volumes:
+            - release_minio_data:/data
+        networks:
+            - release_net
+        healthcheck:
+            test: ["CMD-SHELL", "mc ready local >/dev/null"]
+            interval: 10s
+            timeout: 5s
+            retries: 8
+            start_period: 15s
 
-  crawler-init:
-    <<: *crawler-service
-    command: crawler-init
-    networks: [release_net]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    restart: "no"
+    crawler-init:
+        <<: *crawler-service
+        command: crawler-init
+        networks: [release_net]
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+        restart: "no"
 
-  suumo-links:
-    <<: *vpn-crawler
-    command: crawl-links
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      vpn:
-        condition: service_healthy
-    profiles: ["tasks"]
-    restart: "no"
+    suumo-links:
+        <<: *vpn-crawler
+        command: crawl-links
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            vpn:
+                condition: service_healthy
+        profiles: ["tasks"]
+        restart: "no"
 
-  suumo-html:
-    <<: *vpn-crawler
-    command: crawl-html
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      vpn:
-        condition: service_healthy
-    profiles: ["tasks"]
-    restart: "no"
+    suumo-html:
+        <<: *vpn-crawler
+        command: crawl-html
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            vpn:
+                condition: service_healthy
+        profiles: ["tasks"]
+        restart: "no"
 
-  suumo-page:
-    <<: *vpn-crawler
-    command: crawl-page
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      vpn:
-        condition: service_healthy
-    profiles: ["tasks"]
-    restart: "no"
+    suumo-page:
+        <<: *vpn-crawler
+        command: crawl-page
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            vpn:
+                condition: service_healthy
+        profiles: ["tasks"]
+        restart: "no"
 
-  suumo-tools:
-    <<: *crawler-service
-    command: crawler-shell
-    networks: [release_net]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    profiles: ["tools"]
-    restart: "no"
+    suumo-tools:
+        <<: *crawler-service
+        command: crawler-shell
+        networks: [release_net]
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+        profiles: ["tools"]
+        restart: "no"
 
-  suumo-rerun-html:
-    <<: *vpn-crawler
-    command: manual-rerun-failed-html
-    depends_on:
-      vpn:
-        condition: service_healthy
-    profiles: [tasks]
-    restart: "no"
+    suumo-rerun-html:
+        <<: *vpn-crawler
+        command: manual-rerun-failed-html
+        depends_on:
+            vpn:
+                condition: service_healthy
+        profiles: [tasks]
+        restart: "no"
 
-  telegram-test:
-    <<: *crawler-service
-    command: telegram-test
-    networks: [release_net]
-    profiles: ["tools"]
-    restart: "no"
+    telegram-test:
+        <<: *crawler-service
+        command: telegram-test
+        networks: [release_net]
+        profiles: ["tools"]
+        restart: "no"
 
 volumes:
-  release_postgres_data:
-    driver: local
-  release_minio_data:
-    driver: local
+    release_postgres_data:
+        driver: local
+    release_minio_data:
+        driver: local
 
 networks:
-  release_net:
-    driver: bridge
+    release_net:
+        driver: bridge

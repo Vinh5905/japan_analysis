@@ -1,0 +1,11 @@
+minimum_pre_commit_version: "4.6.2"
+repos:
+    - repo: local
+      hooks:
+          - id: format-code
+            name: Format Python, dbt SQL, PostgreSQL, YAML, JSON and Markdown
+            entry: .venv-format/bin/python tools/format_code.py
+            language: system
+            files: '\.(py|sql|ya?ml|json|md|[cm]?js|[cm]?ts|jsx|tsx|css|html)$'
+            exclude: '^(.agents/|pipeline/vendor/|analytics/dbt/(charts/|dbt_charts\.yml)|package-lock\.json$)'
+            require_serial: true

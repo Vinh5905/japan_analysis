@@ -107,7 +107,10 @@ class TelegramNotifierTests(unittest.TestCase):
         config = load_telegram_config({})
 
         self.assertFalse(config.enabled)
-        with patch('crawler.telegram_notifier.urlopen') as http, patch('crawler.telegram_notifier.time.sleep') as sleep:
+        with (
+            patch("crawler.telegram_notifier.urlopen") as http,
+            patch("crawler.telegram_notifier.time.sleep") as sleep,
+        ):
             result = TelegramNotifier(config).send_message("test")
         http.assert_not_called()
         sleep.assert_not_called()
@@ -125,7 +128,7 @@ class TelegramNotifierTests(unittest.TestCase):
             )
         )
 
-        with patch('crawler.telegram_notifier.time.sleep') as sleep:
+        with patch("crawler.telegram_notifier.time.sleep") as sleep:
             result = notifier.send_message("Crawler started")
         sleep.assert_not_called()
         mocked_urlopen.assert_called_once()
@@ -142,7 +145,7 @@ class TelegramNotifierTests(unittest.TestCase):
     def test_transport_failure_is_returned_without_raising(self, mocked_urlopen):
         notifier = TelegramNotifier(TelegramConfig("123:test", "987"))
 
-        with patch('crawler.telegram_notifier.time.sleep') as sleep:
+        with patch("crawler.telegram_notifier.time.sleep") as sleep:
             result = notifier.send_message("Crawler failed")
 
         self.assertFalse(result.sent)
@@ -152,23 +155,42 @@ class TelegramNotifierTests(unittest.TestCase):
 
     def test_third_retry_delivers_and_keeps_payload_and_secrets_safe(self):
         """Recover real TLS/network/server failure types and stop after confirmed delivery."""
-        token = '123456:retry-test-token'
-        error = HTTPError('https://api.telegram.org/bot' + token, 503, 'Unavailable', {}, io.BytesIO())
-        notifier = TelegramNotifier(TelegramConfig(token, '987'))
-        failures = [TimeoutError('TLS handshake timed out'), URLError('network down'), error, FakeHttpResponse()]
-        with patch('crawler.telegram_notifier.urlopen', side_effect=failures) as http, patch('crawler.telegram_notifier.time.sleep') as sleep, self.assertLogs('crawler.telegram', level='INFO') as logs:
-            result = notifier.send_message('<b>HTML started</b>')
+        token = "123456:retry-test-token"
+        error = HTTPError(
+            "https://api.telegram.org/bot" + token, 503, "Unavailable", {}, io.BytesIO()
+        )
+        notifier = TelegramNotifier(TelegramConfig(token, "987"))
+        failures = [
+            TimeoutError("TLS handshake timed out"),
+            URLError("network down"),
+            error,
+            FakeHttpResponse(),
+        ]
+        with (
+            patch("crawler.telegram_notifier.urlopen", side_effect=failures) as http,
+            patch("crawler.telegram_notifier.time.sleep") as sleep,
+            self.assertLogs("crawler.telegram", level="INFO") as logs,
+        ):
+            result = notifier.send_message("<b>HTML started</b>")
         self.assertTrue(result.sent)
         self.assertEqual(http.call_count, 4)
         self.assertEqual(sleep.call_count, 3)
         self.assertEqual(len({c.args[0].data for c in http.call_args_list}), 1)
-        self.assertIn('delivered on attempt 4/4', '\n'.join(logs.output))
-        self.assertNotIn(token, '\n'.join(logs.output))
+        self.assertIn("delivered on attempt 4/4", "\n".join(logs.output))
+        self.assertNotIn(token, "\n".join(logs.output))
 
     def test_successful_first_retry_does_not_send_again(self):
         """A successful retry does not exhaust the retry budget or send duplicate copies."""
-        with patch('crawler.telegram_notifier.urlopen', side_effect=[URLError('DNS'), FakeHttpResponse()]) as http, patch('crawler.telegram_notifier.time.sleep') as sleep:
-            result = TelegramNotifier(TelegramConfig('123:test', '987')).send_message('started')
+        with (
+            patch(
+                "crawler.telegram_notifier.urlopen",
+                side_effect=[URLError("DNS"), FakeHttpResponse()],
+            ) as http,
+            patch("crawler.telegram_notifier.time.sleep") as sleep,
+        ):
+            result = TelegramNotifier(TelegramConfig("123:test", "987")).send_message(
+                "started"
+            )
         self.assertTrue(result.sent)
         self.assertEqual(http.call_count, 2)
         sleep.assert_called_once_with(2)
@@ -177,9 +199,18 @@ class TelegramNotifierTests(unittest.TestCase):
         """Invalid markup/token/chat authorization cannot recover by resending."""
         for status in (400, 401, 403):
             with self.subTest(status=status):
-                error = HTTPError('https://example.invalid', status, 'Rejected', {}, io.BytesIO())
-                with patch('crawler.telegram_notifier.urlopen', side_effect=error) as http, patch('crawler.telegram_notifier.time.sleep') as sleep:
-                    result = TelegramNotifier(TelegramConfig('123:test', '987')).send_message('started')
+                error = HTTPError(
+                    "https://example.invalid", status, "Rejected", {}, io.BytesIO()
+                )
+                with (
+                    patch(
+                        "crawler.telegram_notifier.urlopen", side_effect=error
+                    ) as http,
+                    patch("crawler.telegram_notifier.time.sleep") as sleep,
+                ):
+                    result = TelegramNotifier(
+                        TelegramConfig("123:test", "987")
+                    ).send_message("started")
                 self.assertFalse(result.sent)
                 self.assertEqual(result.status_code, status)
                 http.assert_called_once()
@@ -188,26 +219,57 @@ class TelegramNotifierTests(unittest.TestCase):
     def test_retry_after_is_honored_for_http_and_json_api_errors(self):
         """Use Telegram's retry_after hint whether it arrives via HTTPError or JSON."""
         payload = b'{"ok":false,"error_code":429,"parameters":{"retry_after":7}}'
-        for failure in (HTTPError('https://example.invalid', 429, 'Slow down', {}, io.BytesIO(payload)), FakeHttpResponse(200, payload)):
-            with patch('crawler.telegram_notifier.urlopen', side_effect=[failure, FakeHttpResponse()]) as http, patch('crawler.telegram_notifier.time.sleep') as sleep:
-                result = TelegramNotifier(TelegramConfig('123:test', '987')).send_message('started')
+        for failure in (
+            HTTPError(
+                "https://example.invalid", 429, "Slow down", {}, io.BytesIO(payload)
+            ),
+            FakeHttpResponse(200, payload),
+        ):
+            with (
+                patch(
+                    "crawler.telegram_notifier.urlopen",
+                    side_effect=[failure, FakeHttpResponse()],
+                ) as http,
+                patch("crawler.telegram_notifier.time.sleep") as sleep,
+            ):
+                result = TelegramNotifier(
+                    TelegramConfig("123:test", "987")
+                ).send_message("started")
             self.assertTrue(result.sent)
             self.assertEqual(http.call_count, 2)
             sleep.assert_called_once_with(7)
 
     def test_long_rate_limit_does_not_sleep_unbounded_or_retry_early(self):
         """Keep crawler notification latency bounded without violating server backoff."""
-        error = FakeHttpResponse(200, b'{"ok":false,"error_code":429,"parameters":{"retry_after":60}}')
-        with patch('crawler.telegram_notifier.urlopen', return_value=error) as http, patch('crawler.telegram_notifier.time.sleep') as sleep:
-            result = TelegramNotifier(TelegramConfig('123:test', '987')).send_message('started')
+        error = FakeHttpResponse(
+            200, b'{"ok":false,"error_code":429,"parameters":{"retry_after":60}}'
+        )
+        with (
+            patch("crawler.telegram_notifier.urlopen", return_value=error) as http,
+            patch("crawler.telegram_notifier.time.sleep") as sleep,
+        ):
+            result = TelegramNotifier(TelegramConfig("123:test", "987")).send_message(
+                "started"
+            )
         self.assertFalse(result.sent)
         http.assert_called_once()
         sleep.assert_not_called()
 
     def test_json_server_error_is_retried(self):
         """A JSON API failure is not mistaken for a successful HTTP 200 delivery."""
-        with patch('crawler.telegram_notifier.urlopen', side_effect=[FakeHttpResponse(200, b'{"ok":false,"error_code":502}'), FakeHttpResponse()]) as http, patch('crawler.telegram_notifier.time.sleep'):
-            result = TelegramNotifier(TelegramConfig('123:test', '987')).send_message('started')
+        with (
+            patch(
+                "crawler.telegram_notifier.urlopen",
+                side_effect=[
+                    FakeHttpResponse(200, b'{"ok":false,"error_code":502}'),
+                    FakeHttpResponse(),
+                ],
+            ) as http,
+            patch("crawler.telegram_notifier.time.sleep"),
+        ):
+            result = TelegramNotifier(TelegramConfig("123:test", "987")).send_message(
+                "started"
+            )
         self.assertTrue(result.sent)
         self.assertEqual(http.call_count, 2)
 
@@ -215,13 +277,22 @@ class TelegramNotifierTests(unittest.TestCase):
         """Exercise the actual spider-opened hook that lost the production HTML notification."""
         extension = TelegramNotificationExtension(FakeCrawler())
         self.addCleanup(extension.engine_stopped)
-        extension.notifier = TelegramNotifier(TelegramConfig('123:test', '987'))
-        with patch('crawler.telegram_notifier.urlopen', side_effect=[URLError(TimeoutError('TLS handshake timed out')), FakeHttpResponse()]) as http, patch('crawler.telegram_notifier.time.sleep'):
-            extension.spider_opened(FakeSpider('suumo_html'))
+        extension.notifier = TelegramNotifier(TelegramConfig("123:test", "987"))
+        with (
+            patch(
+                "crawler.telegram_notifier.urlopen",
+                side_effect=[
+                    URLError(TimeoutError("TLS handshake timed out")),
+                    FakeHttpResponse(),
+                ],
+            ) as http,
+            patch("crawler.telegram_notifier.time.sleep"),
+        ):
+            extension.spider_opened(FakeSpider("suumo_html"))
         self.assertEqual(http.call_count, 2)
         payload = json.loads(http.call_args.args[0].data)
-        self.assertIn('JOB BẮT ĐẦU', payload['text'])
-        self.assertIn('Tải HTML', payload['text'])
+        self.assertIn("JOB BẮT ĐẦU", payload["text"])
+        self.assertIn("Tải HTML", payload["text"])
 
     def test_message_builder_redacts_token_and_enforces_limit(self):
         token = "123456:secret-token"

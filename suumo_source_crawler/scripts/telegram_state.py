@@ -14,8 +14,12 @@ class ControlState:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.transaction() as db:
-            db.execute("CREATE TABLE IF NOT EXISTS values_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            db.execute("CREATE TABLE IF NOT EXISTS confirmations (nonce TEXT PRIMARY KEY, expires REAL NOT NULL, used INTEGER NOT NULL DEFAULT 0)")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS values_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS confirmations (nonce TEXT PRIMARY KEY, expires REAL NOT NULL, used INTEGER NOT NULL DEFAULT 0)"
+            )
         path.chmod(0o600)
 
     @contextmanager
@@ -33,11 +37,16 @@ class ControlState:
 
     @staticmethod
     def put(db, key, value):
-        db.execute("INSERT OR REPLACE INTO values_store VALUES (?, ?)", (key, json.dumps(value)))
+        db.execute(
+            "INSERT OR REPLACE INTO values_store VALUES (?, ?)",
+            (key, json.dumps(value)),
+        )
 
     @staticmethod
     def read(db, key, default=None):
-        row = db.execute("SELECT value FROM values_store WHERE key=?", (key,)).fetchone()
+        row = db.execute(
+            "SELECT value FROM values_store WHERE key=?", (key,)
+        ).fetchone()
         return json.loads(row[0]) if row else default
 
     def get(self, key, default=None):
@@ -71,7 +80,10 @@ class ControlState:
     def consume_confirmation(self, nonce, now=None):
         now = time.time() if now is None else now
         with self.transaction() as db:
-            cursor = db.execute("UPDATE confirmations SET used=1 WHERE nonce=? AND used=0 AND expires>?", (nonce, now))
+            cursor = db.execute(
+                "UPDATE confirmations SET used=1 WHERE nonce=? AND used=0 AND expires>?",
+                (nonce, now),
+            )
             return cursor.rowcount == 1
 
     def request_start(self, now=None, area=None, nonce=None):
@@ -80,7 +92,10 @@ class ControlState:
         with self.transaction() as db:
             if nonce:
                 selected = self.read(db, "confirmation_area", {})
-                cursor = db.execute("UPDATE confirmations SET used=1 WHERE nonce=? AND used=0 AND expires>?", (nonce, now))
+                cursor = db.execute(
+                    "UPDATE confirmations SET used=1 WHERE nonce=? AND used=0 AND expires>?",
+                    (nonce, now),
+                )
                 if cursor.rowcount != 1 or selected.get("nonce") != nonce:
                     return False
                 area = selected.get("area")
@@ -89,15 +104,24 @@ class ControlState:
                 return False
             if not area:
                 raise ValueError("Select a ward before confirming")
-            self.put(db, "start_request", {"at": now, "id": uuid.uuid4().hex, "area": area})
+            self.put(
+                db, "start_request", {"at": now, "id": uuid.uuid4().hex, "area": area}
+            )
             return True
 
     def launch(self, area, source, request_id=None, now=None):
         now = time.time() if now is None else now
-        run = {"pipeline_key": request_id or uuid.uuid4().hex,
-               "source": source, "area": area, "started": now, "updated": now,
-               "step": "launching", "status": "launching", "completion": None,
-               "cleanup_confirmed": False}
+        run = {
+            "pipeline_key": request_id or uuid.uuid4().hex,
+            "source": source,
+            "area": area,
+            "started": now,
+            "updated": now,
+            "step": "launching",
+            "status": "launching",
+            "completion": None,
+            "cleanup_confirmed": False,
+        }
         self.set("pipeline", run)
         return run
 
@@ -106,8 +130,13 @@ class ControlState:
             run = self.read(db, "pipeline", {})
             if run.get("status") != "launching" or run_id is None:
                 raise RuntimeError("Dispatcher context required before VPN")
-            run.update(run_id=str(run_id), status="running", step="vpn_preflight",
-                       started=created_at, updated=time.time())
+            run.update(
+                run_id=str(run_id),
+                status="running",
+                step="vpn_preflight",
+                started=created_at,
+                updated=time.time(),
+            )
             pending = self.read(db, "start_request")
             if pending and pending["id"] == run["pipeline_key"]:
                 self.put(db, "start_request", None)
@@ -126,20 +155,30 @@ class ControlState:
 
 
 def state_for(env_file: Path):
-    return ControlState(env_file.resolve().parent / "state" / "telegram-control.sqlite3")
+    return ControlState(
+        env_file.resolve().parent / "state" / "telegram-control.sqlite3"
+    )
 
 
 def install_context(run):
     """Install the frozen ward and verified VPN context for all pipeline stages."""
     if run:
-        os.environ["TELEGRAM_PIPELINE_RUN_ID"] = str(run.get("run_id", run.get("pipeline_key", "")))
+        os.environ["TELEGRAM_PIPELINE_RUN_ID"] = str(
+            run.get("run_id", run.get("pipeline_key", ""))
+        )
         area = run.get("area", {})
-        os.environ["SUUMO_RUN_AREA"] = " · ".join(str(area[k]) for k in ("prefecture", "district", "municipality", "ward") if area.get(k))
+        os.environ["SUUMO_RUN_AREA"] = " · ".join(
+            str(area[k])
+            for k in ("prefecture", "district", "municipality", "ward")
+            if area.get(k)
+        )
         if run.get("run_id"):
             os.environ["SUUMO_RUN_ID"] = str(run["run_id"])
         if area.get("search_url"):
             os.environ["SUUMO_SEARCH_URL"] = area["search_url"]
-        os.environ["SUUMO_HTML_LINKS_FILE"] = "tmp/runs/" + run.get("pipeline_key", str(run.get("run_id"))) + "/links.txt"
+        os.environ["SUUMO_HTML_LINKS_FILE"] = (
+            "tmp/runs/" + run.get("pipeline_key", str(run.get("run_id"))) + "/links.txt"
+        )
         vpn = run.get("vpn") or run.get("vpn_attempt") or {}
         os.environ["SUUMO_VPN_FILENAME"] = str(vpn.get("filename", ""))
         os.environ["SUUMO_VPN_ID"] = str(run.get("vpn", {}).get("vpn_id", ""))

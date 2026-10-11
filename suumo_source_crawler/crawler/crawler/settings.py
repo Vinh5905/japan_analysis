@@ -35,7 +35,7 @@ ADDONS = {}
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
-#USER_AGENT = "crawler (+http://www.yourdomain.com)"
+# USER_AGENT = "crawler (+http://www.yourdomain.com)"
 
 # Obey robots.txt rules. This crawler targets a fixed public listing URL and keeps
 # request volume low through delay/concurrency settings.
@@ -43,14 +43,18 @@ ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
 CONCURRENT_REQUESTS = env_int("SUUMO_CONCURRENT_REQUESTS", 2, minimum=1)
-CONCURRENT_REQUESTS_PER_DOMAIN = env_int("SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN", 1, minimum=1)
+CONCURRENT_REQUESTS_PER_DOMAIN = env_int(
+    "SUUMO_CONCURRENT_REQUESTS_PER_DOMAIN", 1, minimum=1
+)
 
 # AutoThrottle owns request pacing. DOWNLOAD_DELAY is intentionally unset because
 # Scrapy treats it as a fixed minimum delay even when AutoThrottle is enabled.
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = env_float("SUUMO_AUTOTHROTTLE_START_DELAY", 3)
 AUTOTHROTTLE_MAX_DELAY = env_float("SUUMO_AUTOTHROTTLE_MAX_DELAY", 15)
-AUTOTHROTTLE_TARGET_CONCURRENCY = env_float("SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY", 0.5)
+AUTOTHROTTLE_TARGET_CONCURRENCY = env_float(
+    "SUUMO_AUTOTHROTTLE_TARGET_CONCURRENCY", 0.5
+)
 if AUTOTHROTTLE_MAX_DELAY < AUTOTHROTTLE_START_DELAY:
     raise ValueError("SUUMO_AUTOTHROTTLE_MAX_DELAY must be >= start delay")
 if AUTOTHROTTLE_TARGET_CONCURRENCY <= 0:
@@ -91,16 +95,16 @@ SUUMO_SOURCE_ID = env_int("SUUMO_SOURCE_ID", 1, minimum=1)
 SUUMO_RUN_CREATED_BY = os.environ.get("SUUMO_RUN_CREATED_BY", "schedule")
 
 # Disable cookies (enabled by default)
-#COOKIES_ENABLED = False
+# COOKIES_ENABLED = False
 
 # Disable Telnet Console (enabled by default)
-#TELNETCONSOLE_ENABLED = False
+# TELNETCONSOLE_ENABLED = False
 
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-#SPIDER_MIDDLEWARES = {
+# SPIDER_MIDDLEWARES = {
 #    "crawler.middlewares.CrawlerSpiderMiddleware": 543,
-#}
+# }
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
@@ -118,17 +122,17 @@ EXTENSIONS = {
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
+# ITEM_PIPELINES = {
 #    "crawler.pipelines.CrawlerPipeline": 300,
-#}
+# }
 
 # Enable and configure HTTP caching (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
-#HTTPCACHE_ENABLED = True
-#HTTPCACHE_EXPIRATION_SECS = 0
-#HTTPCACHE_DIR = "httpcache"
-#HTTPCACHE_IGNORE_HTTP_CODES = []
-#HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
+# HTTPCACHE_ENABLED = True
+# HTTPCACHE_EXPIRATION_SECS = 0
+# HTTPCACHE_DIR = "httpcache"
+# HTTPCACHE_IGNORE_HTTP_CODES = []
+# HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 
 # Set settings whose default value is deprecated to a future-proof value
 FEED_EXPORT_ENCODING = "utf-8"

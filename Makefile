@@ -17,6 +17,32 @@ export COMPOSE_DOCKER_CLI_BUILD ?= 1
 
 .DEFAULT_GOAL := help
 
+# Development-only tools. Run from the repository root, independently of Docker.
+FORMAT_PYTHON ?= python3
+FORMAT_ENV := .venv-format
+export PRE_COMMIT_HOME := $(CURDIR)/.cache-format/pre-commit
+export PIP_CACHE_DIR := $(CURDIR)/.cache-format/pip
+
+.PHONY: format-setup format format-check format-hooks format-staged
+format-setup: ## Install pinned local formatters and the automatic pre-commit hook
+	@test -x $(FORMAT_ENV)/bin/python || $(FORMAT_PYTHON) -m venv $(FORMAT_ENV)
+	$(FORMAT_ENV)/bin/python -m ensurepip --upgrade
+	$(FORMAT_ENV)/bin/python -m pip install -r tools/format/requirements.txt
+	npm ci --ignore-scripts --cache .cache-format/npm
+	$(MAKE) format-hooks
+
+format: ## Format all source files; optional files="pipeline analytics/dbt"
+	$(FORMAT_ENV)/bin/python tools/format_code.py $(if $(files),$(files),--all)
+
+format-check: ## Check formatting without writes; optional files="path/to/file.py"
+	$(FORMAT_ENV)/bin/python tools/format_code.py --check $(if $(files),$(files),--all)
+
+format-hooks: ## Install the formatter hook for this Git checkout
+	$(FORMAT_ENV)/bin/pre-commit install
+
+format-staged: ## Run the formatter hook on files staged for commit
+	$(FORMAT_ENV)/bin/pre-commit run
+
 .PHONY: help
 help: ## Show available root commands
 	@printf "\nJapan Analysis - shared infrastructure commands\n\n"

@@ -12,5 +12,7 @@ def release_lock(directory: Path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RuntimeError("Another crawler run or deploy holds the release lock") from exc
+            raise RuntimeError(
+                "Another crawler run or deploy holds the release lock"
+            ) from exc
         yield

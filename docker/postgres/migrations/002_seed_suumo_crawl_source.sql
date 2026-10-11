@@ -7,7 +7,7 @@
 BEGIN;
 
 ALTER TABLE crawl_sources
-    ALTER COLUMN robots_policy SET DEFAULT 'allowed';
+ALTER COLUMN robots_policy SET DEFAULT 'allowed';
 
 INSERT INTO crawl_sources (
     source_id,
@@ -30,15 +30,15 @@ VALUES (
     NULL
 )
 ON CONFLICT (source_id) DO UPDATE
-SET
-    source_key = EXCLUDED.source_key,
-    source_name = EXCLUDED.source_name,
-    base_url = EXCLUDED.base_url,
-    crawl_frequency = EXCLUDED.crawl_frequency,
-    is_active = EXCLUDED.is_active,
-    robots_policy = EXCLUDED.robots_policy,
-    notes = EXCLUDED.notes,
-    updated_at = now();
+    SET
+        source_key = EXCLUDED.source_key,
+        source_name = EXCLUDED.source_name,
+        base_url = EXCLUDED.base_url,
+        crawl_frequency = EXCLUDED.crawl_frequency,
+        is_active = EXCLUDED.is_active,
+        robots_policy = EXCLUDED.robots_policy,
+        notes = EXCLUDED.notes,
+        updated_at = now();
 
 SELECT setval(
     pg_get_serial_sequence('crawl_sources', 'source_id'),

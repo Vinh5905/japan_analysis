@@ -16,7 +16,9 @@ from scripts.ensure_openvpn import ensure_vpn, vpn_health_reason  # noqa: E402
 def completed(command: Sequence[str], returncode: int = 0, stdout: str = ""):
     """Build a small CompletedProcess result for command-runner tests."""
 
-    return subprocess.CompletedProcess(list(command), returncode, stdout=stdout, stderr="")
+    return subprocess.CompletedProcess(
+        list(command), returncode, stdout=stdout, stderr=""
+    )
 
 
 class StatefulVpnRunner:
@@ -175,7 +177,9 @@ class EnsureOpenVpnTests(unittest.TestCase):
 
         self.assertTrue(healthy)
         self.assertTrue(any("VPN CHƯA BẬT" in message for message in notifier.messages))
-        self.assertTrue(any("ĐANG TỰ BẬT VPN" in message for message in notifier.messages))
+        self.assertTrue(
+            any("ĐANG TỰ BẬT VPN" in message for message in notifier.messages)
+        )
         self.assertTrue(any("VPN ĐÃ BẬT" in message for message in notifier.messages))
 
     def test_unstable_active_vpn_still_uses_all_restart_attempts(self):
@@ -197,7 +201,9 @@ class EnsureOpenVpnTests(unittest.TestCase):
 
         self.assertFalse(healthy)
         self.assertEqual(runner.restart_count, 3)
-        self.assertTrue(any("VPN KHÔNG THỂ BẬT" in message for message in notifier.messages))
+        self.assertTrue(
+            any("VPN KHÔNG THỂ BẬT" in message for message in notifier.messages)
+        )
 
 
 if __name__ == "__main__":

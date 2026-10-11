@@ -20,18 +20,18 @@ docs(readme): update setup guide
 
 `type` mô tả loại thay đổi chính của commit. Chỉ dùng một trong các giá trị sau:
 
-| Type         | Ý nghĩa                                                                                            |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| `feat`     | Thêm tính năng mới                                                                               |
-| `fix`      | Sửa lỗi                                                                                            |
-| `docs`     | Chỉ thay đổi tài liệu, không đổi hành vi hệ thống                                         |
-| `style`    | Chỉ chỉnh format, khoảng trắng, dấu chấm phẩy, lint style; không đổi hành vi              |
-| `refactor` | Thay đổi cấu trúc code nhưng không thêm tính năng và không sửa bug                       |
-| `test`     | Thêm hoặc cập nhật test                                                                          |
-| `chore`    | Việc phụ trợ như build, tooling, cleanup, dependency, script                                     |
+| Type       | Ý nghĩa                                                                                |
+| ---------- | -------------------------------------------------------------------------------------- |
+| `feat`     | Thêm tính năng mới                                                                     |
+| `fix`      | Sửa lỗi                                                                                |
+| `docs`     | Chỉ thay đổi tài liệu, không đổi hành vi hệ thống                                      |
+| `style`    | Chỉ chỉnh format, khoảng trắng, dấu chấm phẩy, lint style; không đổi hành vi           |
+| `refactor` | Thay đổi cấu trúc code nhưng không thêm tính năng và không sửa bug                     |
+| `test`     | Thêm hoặc cập nhật test                                                                |
+| `chore`    | Việc phụ trợ như build, tooling, cleanup, dependency, script                           |
 | `config`   | Thay đổi cấu hình ứng dụng, môi trường, runtime, hoặc thiết lập hệ thống               |
 | `content`  | Thay đổi dữ liệu nội dung, dữ liệu mẫu, tài nguyên, seed data, hoặc nội dung nghiệp vụ |
-| `perf`     | Cải thiện hiệu năng                                                                              |
+| `perf`     | Cải thiện hiệu năng                                                                    |
 
 ### `scope`
 

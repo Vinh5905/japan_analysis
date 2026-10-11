@@ -1,4 +1,5 @@
 """Read-only release acceptance after deploying the Docker VPN backend."""
+
 import argparse
 import hashlib
 import json
@@ -7,7 +8,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'suumo_source_crawler'))
+sys.path.insert(0, str(ROOT / "suumo_source_crawler"))
 from scripts.deploy_release import HOST_FILES
 from scripts.vpn_pool import inventory
 
@@ -81,25 +82,52 @@ print(json.dumps({'tag':expected['tag'],'host_checksums':len(expected['host_file
 def main():
     """Send checksums and read-only verification through SSH, never raw private profiles."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--tag', required=True)
-    parser.add_argument('--digest', required=True)
-    parser.add_argument('--backup', required=True)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--digest", required=True)
+    parser.add_argument("--backup", required=True)
     args = parser.parse_args()
     image_files = {
-        '/app/crawler/' + name: hashlib.sha256((ROOT / 'suumo_source_crawler/crawler' / name).read_bytes()).hexdigest()
-        for name in ('crawler/vpn_accounting.py', 'crawler/metadata_db.py', 'crawler/settings.py',
-                     'crawler/telegram_extension.py', 'crawler/telegram_notifier.py', 'tools/manual_rerun_failed_html.py')}
-    image_files['/app/vpn/container_vpn.py'] = hashlib.sha256((ROOT / 'suumo_source_crawler/vpn/container_vpn.py').read_bytes()).hexdigest()
-    expected = {**vars(args), 'host_files': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in HOST_FILES},
-                'vpns': inventory(ROOT / 'suumo_source_crawler/vpn_config'), 'image_files': image_files}
-    result = subprocess.run(['ssh', 'thuevpsgiare', 'python3 -'], input=REMOTE.replace('EXPECTED', 'expected=json.loads(' + repr(json.dumps(expected)) + ')'), capture_output=True, text=True)
+        "/app/crawler/" + name: hashlib.sha256(
+            (ROOT / "suumo_source_crawler/crawler" / name).read_bytes()
+        ).hexdigest()
+        for name in (
+            "crawler/vpn_accounting.py",
+            "crawler/metadata_db.py",
+            "crawler/settings.py",
+            "crawler/telegram_extension.py",
+            "crawler/telegram_notifier.py",
+            "tools/manual_rerun_failed_html.py",
+        )
+    }
+    image_files["/app/vpn/container_vpn.py"] = hashlib.sha256(
+        (ROOT / "suumo_source_crawler/vpn/container_vpn.py").read_bytes()
+    ).hexdigest()
+    expected = {
+        **vars(args),
+        "host_files": {
+            name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+            for name in HOST_FILES
+        },
+        "vpns": inventory(ROOT / "suumo_source_crawler/vpn_config"),
+        "image_files": image_files,
+    }
+    result = subprocess.run(
+        ["ssh", "thuevpsgiare", "python3 -"],
+        input=REMOTE.replace(
+            "EXPECTED", "expected=json.loads(" + repr(json.dumps(expected)) + ")"
+        ),
+        capture_output=True,
+        text=True,
+    )
     if result.returncode:
         print(result.stderr)
         return result.returncode
     print(result.stdout)
-    (ROOT / 'tmp/releases' / (args.tag + '-verification.json')).write_text(result.stdout)
+    (ROOT / "tmp/releases" / (args.tag + "-verification.json")).write_text(
+        result.stdout
+    )
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

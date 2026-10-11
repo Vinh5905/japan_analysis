@@ -66,13 +66,28 @@ def parse_args() -> argparse.Namespace:
         default=REPOSITORY_ROOT / ".env",
         help="Path to the release .env file.",
     )
-    parser.add_argument("--area-id", type=int, help="Ward ID for direct manual pipeline")
-    parser.add_argument('--rerun-failed-html', action='store_true', help='Rerun failed HTML for --area-id, using normal VPN lifecycle')
-    parser.add_argument('--limit', dest='rerun_limit', type=int, default=0, help='Maximum failed tasks for HTML rerun')
+    parser.add_argument(
+        "--area-id", type=int, help="Ward ID for direct manual pipeline"
+    )
+    parser.add_argument(
+        "--rerun-failed-html",
+        action="store_true",
+        help="Rerun failed HTML for --area-id, using normal VPN lifecycle",
+    )
+    parser.add_argument(
+        "--limit",
+        dest="rerun_limit",
+        type=int,
+        default=0,
+        help="Maximum failed tasks for HTML rerun",
+    )
     parser.add_argument("--vpn-service", default="openvpn-client@japan")
     parser.add_argument("--vpn-interface", default="tun0")
-    parser.add_argument("--vpn-managed-by-systemd", action="store_true",
-                        help="Only for the unit that supplies ExecStartPre and ExecStopPost VPN hooks.")
+    parser.add_argument(
+        "--vpn-managed-by-systemd",
+        action="store_true",
+        help="Only for the unit that supplies ExecStartPre and ExecStopPost VPN hooks.",
+    )
     return parser.parse_args()
 
 
@@ -207,7 +222,8 @@ def pipeline_completed_message(
         "Kết thúc": current_timestamp(),
         "Thời gian chạy": f"{duration_seconds:.2f} giây",
         "Các bước hoàn thành": f"{len(summaries)}/{len(SPIDER_NAMES)}",
-        "URL đã xử lý": int(html.get("html_success_count", 0)) + int(html.get("html_failed_count", 0)),
+        "URL đã xử lý": int(html.get("html_success_count", 0))
+        + int(html.get("html_failed_count", 0)),
         "URL mới": links.get("new_links", 0),
         "HTML thành công": html.get("html_success_count", 0),
         "HTML thất bại": html.get("html_failed_count", 0),
@@ -233,8 +249,10 @@ def pipeline_failed_message(
     """Build a required failure message with exception context and likely causes."""
 
     error_type = result.error_type or "CommandFailed"
-    error_message = result.error_message or result.output_tail or (
-        f"Lệnh của bước {step_name} kết thúc với exit code {result.return_code}"
+    error_message = (
+        result.error_message
+        or result.output_tail
+        or (f"Lệnh của bước {step_name} kết thúc với exit code {result.return_code}")
     )
     return build_event_message(
         "PIPELINE THẤT BẠI",
@@ -273,29 +291,48 @@ def run_with_vpn(args: argparse.Namespace) -> int:
     from scripts.telegram_control import Host
     from scripts.area_catalog import refresh, ward_url
     from scripts.crawl_dispatcher import choose_area
+
     state = state_for(args.env_file)
     host = Host(args.env_file, args.compose_file, read_env_file(args.env_file))
     if host.busy() or host.unresolved():
-        raise RuntimeError("Existing pipeline/cleanup must finish before a manual launch")
+        raise RuntimeError(
+            "Existing pipeline/cleanup must finish before a manual launch"
+        )
     refresh(host)
     areas = host.areas()
     area_id = getattr(args, "area_id", None)
-    if getattr(args, 'rerun_failed_html', False) and not area_id:
-        raise ValueError('Managed HTML rerun requires --area-id; one ward per VPN run')
-    area = next((a for a in areas if a["area_id"] == area_id), None) if area_id else choose_area(areas)
+    if getattr(args, "rerun_failed_html", False) and not area_id:
+        raise ValueError("Managed HTML rerun requires --area-id; one ward per VPN run")
+    area = (
+        next((a for a in areas if a["area_id"] == area_id), None)
+        if area_id
+        else choose_area(areas)
+    )
     if not area:
         raise ValueError("Unknown area_id")
     area["search_url"] = ward_url(host.values.get("SUUMO_SEARCH_URL", ""), area["sc"])
     state.launch(area, "manual")
     scripts = PROJECT_ROOT / "scripts"
-    common = ["--env-file", str(args.env_file.resolve()), "--service", args.vpn_service,
-              "--interface", args.vpn_interface, "--compose-file", str(args.compose_file.resolve())]
+    common = [
+        "--env-file",
+        str(args.env_file.resolve()),
+        "--service",
+        args.vpn_service,
+        "--interface",
+        args.vpn_interface,
+        "--compose-file",
+        str(args.compose_file.resolve()),
+    ]
     environment = dict(os.environ)
     environment["SUUMO_RUN_CREATED_BY"] = "manual"
     directory = args.compose_file.resolve().parent
     result_code = 1
     try:
-        preflight = run_command([sys.executable, str(scripts / "ensure_openvpn.py"), *common], directory, environment)
+        preflight = run_command(
+            [sys.executable, str(scripts / "ensure_openvpn.py"), *common],
+            directory,
+            environment,
+        )
         result_code = preflight.return_code
         if result_code == 0:
             result_code = run_pipeline(args)
@@ -305,10 +342,17 @@ def run_with_vpn(args: argparse.Namespace) -> int:
         raise
     finally:
         environment["SERVICE_RESULT"] = "success" if result_code == 0 else "exit-code"
-        cleanup = run_command([sys.executable, str(scripts / "stop_openvpn.py"), *common,
-                               "--lock-held"], directory, environment)
+        cleanup = run_command(
+            [sys.executable, str(scripts / "stop_openvpn.py"), *common, "--lock-held"],
+            directory,
+            environment,
+        )
         if cleanup.return_code != 0:
-            print("Pipeline ended but VPN shutdown was NOT confirmed", file=sys.stderr, flush=True)
+            print(
+                "Pipeline ended but VPN shutdown was NOT confirmed",
+                file=sys.stderr,
+                flush=True,
+            )
             result_code = result_code or cleanup.return_code
     return result_code
 
@@ -329,12 +373,27 @@ def run_pipeline(args: argparse.Namespace) -> int:
     hostname = socket.gethostname()
     state = state_for(env_file)
     run = state.get("pipeline")
-    if not run or run.get("status") != "running" or run.get("step") != "vpn_ready" or not run.get('vpn', {}).get('vpn_id'):
-        print("VPN preflight context is missing or failed; refusing crawl", file=sys.stderr)
+    if (
+        not run
+        or run.get("status") != "running"
+        or run.get("step") != "vpn_ready"
+        or not run.get("vpn", {}).get("vpn_id")
+    ):
+        print(
+            "VPN preflight context is missing or failed; refusing crawl",
+            file=sys.stderr,
+        )
         return 2
     run_id = run["run_id"]
     install_context(run)
-    for name in ("SUUMO_RUN_ID", "SUUMO_RUN_AREA", "SUUMO_SEARCH_URL", "SUUMO_HTML_LINKS_FILE", "SUUMO_VPN_ID", "SUUMO_VPN_FILENAME"):
+    for name in (
+        "SUUMO_RUN_ID",
+        "SUUMO_RUN_AREA",
+        "SUUMO_SEARCH_URL",
+        "SUUMO_HTML_LINKS_FILE",
+        "SUUMO_VPN_ID",
+        "SUUMO_VPN_FILENAME",
+    ):
         host_environment[name] = os.environ[name]
     host_environment["SUUMO_RUN_CREATED_BY"] = run["source"]
     host_environment["TELEGRAM_HOSTNAME"] = hostname
@@ -365,15 +424,28 @@ def run_pipeline(args: argparse.Namespace) -> int:
     commands: list[tuple[str, list[str]]] = [
         (
             "start_postgres_minio",
-            [*compose_base, "up", "-d", "--no-recreate", "--pull", "never", "postgres", "minio"],
+            [
+                *compose_base,
+                "up",
+                "-d",
+                "--no-recreate",
+                "--pull",
+                "never",
+                "postgres",
+                "minio",
+            ],
         ),
         (
             "crawler_init",
             [*compose_base, "run", "--rm", "--pull", "never", "crawler-init"],
         ),
     ]
-    rerun = getattr(args, 'rerun_failed_html', False)
-    for service_name in (("suumo-html", "suumo-page") if rerun else ("suumo-links", "suumo-html", "suumo-page")):
+    rerun = getattr(args, "rerun_failed_html", False)
+    for service_name in (
+        ("suumo-html", "suumo-page")
+        if rerun
+        else ("suumo-links", "suumo-html", "suumo-page")
+    ):
         commands.append(
             (
                 service_name,
@@ -390,14 +462,28 @@ def run_pipeline(args: argparse.Namespace) -> int:
                     f"TELEGRAM_PIPELINE_RUN_ID={run_id}",
                     "-e",
                     f"SUUMO_RUN_CREATED_BY={run['source']}",
-                    "-e", f"SUUMO_RUN_ID={run_id}",
-                    "-e", f"SUUMO_RUN_AREA={host_environment['SUUMO_RUN_AREA']}",
-                    "-e", f"SUUMO_SEARCH_URL={run['area']['search_url']}",
-                    "-e", f"SUUMO_HTML_LINKS_FILE={host_environment['SUUMO_HTML_LINKS_FILE']}",
-                    "-e", f"SUUMO_VPN_ID={host_environment['SUUMO_VPN_ID']}",
-                    "-e", f"SUUMO_VPN_FILENAME={host_environment['SUUMO_VPN_FILENAME']}",
-                    *(["suumo-rerun-html", "manual-rerun-failed-html", "--limit", str(getattr(args, 'rerun_limit', 0))]
-                      if rerun and service_name == 'suumo-html' else [service_name]),
+                    "-e",
+                    f"SUUMO_RUN_ID={run_id}",
+                    "-e",
+                    f"SUUMO_RUN_AREA={host_environment['SUUMO_RUN_AREA']}",
+                    "-e",
+                    f"SUUMO_SEARCH_URL={run['area']['search_url']}",
+                    "-e",
+                    f"SUUMO_HTML_LINKS_FILE={host_environment['SUUMO_HTML_LINKS_FILE']}",
+                    "-e",
+                    f"SUUMO_VPN_ID={host_environment['SUUMO_VPN_ID']}",
+                    "-e",
+                    f"SUUMO_VPN_FILENAME={host_environment['SUUMO_VPN_FILENAME']}",
+                    *(
+                        [
+                            "suumo-rerun-html",
+                            "manual-rerun-failed-html",
+                            "--limit",
+                            str(getattr(args, "rerun_limit", 0)),
+                        ]
+                        if rerun and service_name == "suumo-html"
+                        else [service_name]
+                    ),
                 ],
             )
         )
@@ -412,13 +498,19 @@ def run_pipeline(args: argparse.Namespace) -> int:
             result = run_command(command, compose_file.parent, host_environment)
             # Scrapy can exit zero after a fatal accounting close; do not continue.
             summaries = read_spider_summaries(run_directory)
-            fatal = (run_directory / 'vpn_accounting_failed').exists() or any(
-                s.get('status') == 'failed' or s.get('close_reason') == 'vpn_accounting_failed'
-                for s in summaries.values())
+            fatal = (run_directory / "vpn_accounting_failed").exists() or any(
+                s.get("status") == "failed"
+                or s.get("close_reason") == "vpn_accounting_failed"
+                for s in summaries.values()
+            )
             # No summary can mean a zero-exit Scrapy startup failure or unwritable tmp.
             # An empty HTML rerun legitimately launches no spider, so allow that case.
-            spider_name = step_name.replace('-', '_')
-            if spider_name in SPIDER_NAMES and spider_name not in summaries and not (rerun and step_name == 'suumo-html'):
+            spider_name = step_name.replace("-", "_")
+            if (
+                spider_name in SPIDER_NAMES
+                and spider_name not in summaries
+                and not (rerun and step_name == "suumo-html")
+            ):
                 fatal = True
             if result.return_code != 0 or fatal:
                 state.progress(step_name, status="failed")
@@ -437,7 +529,14 @@ def run_pipeline(args: argparse.Namespace) -> int:
 
         summaries = read_spider_summaries(run_directory)
         # The cleanup hook publishes completion only after the VPN has closed.
-        state.progress("awaiting_vpn_cleanup", completion={"summaries": summaries, "started_at": started_at, "hostname": hostname})
+        state.progress(
+            "awaiting_vpn_cleanup",
+            completion={
+                "summaries": summaries,
+                "started_at": started_at,
+                "hostname": hostname,
+            },
+        )
         return 0
     finally:
         if run_directory.is_dir():

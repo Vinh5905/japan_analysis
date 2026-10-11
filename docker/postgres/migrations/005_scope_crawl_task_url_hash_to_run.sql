@@ -6,15 +6,15 @@
 BEGIN;
 
 ALTER TABLE crawl_tasks
-    DROP CONSTRAINT IF EXISTS crawl_tasks_url_hash_key;
+DROP CONSTRAINT IF EXISTS crawl_tasks_url_hash_key;
 
 DROP INDEX IF EXISTS crawl_tasks_url_hash_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crawl_tasks_run_url_hash
-    ON crawl_tasks (run_id, url_hash);
+ON crawl_tasks (run_id, url_hash);
 
 CREATE INDEX IF NOT EXISTS idx_crawl_tasks_url_hash_status
-    ON crawl_tasks (url_hash, status);
+ON crawl_tasks (url_hash, status);
 
 COMMIT;
 

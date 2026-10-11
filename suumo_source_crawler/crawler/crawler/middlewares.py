@@ -83,7 +83,9 @@ class SuumoHtmlTaskClaimMiddleware:
 
         task_id = spider.claim_task_for_request(request)
         if task_id is None:
-            spider.logger.info("Skipping duplicate task in current run: %s", request.url)
+            spider.logger.info(
+                "Skipping duplicate task in current run: %s", request.url
+            )
             raise IgnoreRequest(f"Task already exists in current run: {request.url}")
 
         request.cb_kwargs["task_id"] = task_id

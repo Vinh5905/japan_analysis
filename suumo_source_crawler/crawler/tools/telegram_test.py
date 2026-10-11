@@ -13,7 +13,9 @@ from crawler.telegram_notifier import (
 def parse_args() -> argparse.Namespace:
     """Parse an optional label for the Telegram connectivity test."""
 
-    parser = argparse.ArgumentParser(description="Send one SUUMO Telegram test message.")
+    parser = argparse.ArgumentParser(
+        description="Send one SUUMO Telegram test message."
+    )
     parser.add_argument(
         "--message",
         default="Kết nối Telegram Bot API hoạt động.",

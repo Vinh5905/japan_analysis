@@ -60,7 +60,9 @@ class SuumoHtmlSpider(scrapy.Spider):
         configured_run = os.environ.get("SUUMO_RUN_ID")
         if not configured_run:
             raise RuntimeError("SUUMO_RUN_ID required: prepare one ward before HTML")
-        crawl_run = self.metadata_repository.fetch_crawl_run(int(configured_run), self.source_id)
+        crawl_run = self.metadata_repository.fetch_crawl_run(
+            int(configured_run), self.source_id
+        )
         self.run_id = crawl_run.run_id
         self.run_created_at = crawl_run.created_at
         self.logger.info("Created crawl_run row with run_id=%s", self.run_id)
@@ -73,10 +75,12 @@ class SuumoHtmlSpider(scrapy.Spider):
 
         try:
             if self.run_id is not None:
-                finalized_tasks = self.metadata_repository.finalize_unfinished_run_tasks(
-                    run_id=self.run_id,
-                    error_type="SpiderClosed",
-                    error_message=f"Spider closed before task finished: {reason}",
+                finalized_tasks = (
+                    self.metadata_repository.finalize_unfinished_run_tasks(
+                        run_id=self.run_id,
+                        error_type="SpiderClosed",
+                        error_message=f"Spider closed before task finished: {reason}",
+                    )
                 )
                 if finalized_tasks:
                     self.logger.info(
@@ -201,7 +205,10 @@ class SuumoHtmlSpider(scrapy.Spider):
                 error_type="HttpStatusError",
                 error_message=f"Unexpected HTTP status {response.status}",
             )
-            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+            print(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True),
+                flush=True,
+            )
             yield result
             return
 
@@ -220,7 +227,10 @@ class SuumoHtmlSpider(scrapy.Spider):
                 error_message=str(exc),
             )
 
-        print(json.dumps(upload_result, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+        print(
+            json.dumps(upload_result, ensure_ascii=False, indent=2, sort_keys=True),
+            flush=True,
+        )
         yield upload_result
 
     def handle_request_error(self, failure):
@@ -229,7 +239,9 @@ class SuumoHtmlSpider(scrapy.Spider):
         request = failure.request
         task_id = request.cb_kwargs.get("task_id")
         if task_id is None:
-            self.logger.info("Ignoring request failure before task claim: %s", request.url)
+            self.logger.info(
+                "Ignoring request failure before task claim: %s", request.url
+            )
             return
 
         requested_url = request.cb_kwargs.get("requested_url", request.url)
@@ -239,7 +251,9 @@ class SuumoHtmlSpider(scrapy.Spider):
             error_type=failure.type.__name__,
             error_message=str(failure.value),
         )
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+        print(
+            json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), flush=True
+        )
         yield result
 
     def store_successful_response(

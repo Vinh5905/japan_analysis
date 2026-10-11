@@ -178,10 +178,15 @@ class CrawlerMetadataRepository:
     def fetch_crawl_run(self, run_id: int, source_id: int) -> CrawlRunRecord:
         """Reuse only an open, scoped run prepared before preflight."""
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT run_id,created_at FROM crawl_runs WHERE run_id=%s AND source_id=%s AND area_id IS NOT NULL AND pipeline_status='running' AND finished_at IS NULL", (run_id, source_id))
+            cursor.execute(
+                "SELECT run_id,created_at FROM crawl_runs WHERE run_id=%s AND source_id=%s AND area_id IS NOT NULL AND pipeline_status='running' AND finished_at IS NULL",
+                (run_id, source_id),
+            )
             row = cursor.fetchone()
             if row is None:
-                raise RuntimeError("Prepared ward run missing, closed or source mismatch")
+                raise RuntimeError(
+                    "Prepared ward run missing, closed or source mismatch"
+                )
             return CrawlRunRecord(run_id=int(row[0]), created_at=row[1])
 
     def fetch_latest_run_id(self) -> int:
@@ -320,9 +325,9 @@ class CrawlerMetadataRepository:
 
         limit_clause = ""
         params: list[object] = [source_id]
-        area_clause = ''
+        area_clause = ""
         if area_id is not None:
-            area_clause = 'AND area_id = %s'
+            area_clause = "AND area_id = %s"
             params.append(area_id)
         if limit > 0:
             limit_clause = "LIMIT %s"
@@ -419,7 +424,9 @@ class CrawlerMetadataRepository:
                 for row in cursor.fetchall()
             ]
 
-    def fetch_pending_parse_tasks(self, limit: int = 0, run_id: int | None = None) -> list[PendingParseTask]:
+    def fetch_pending_parse_tasks(
+        self, limit: int = 0, run_id: int | None = None
+    ) -> list[PendingParseTask]:
         """Return crawl tasks whose raw snapshots are ready for parser batching."""
 
         limit_clause = ""

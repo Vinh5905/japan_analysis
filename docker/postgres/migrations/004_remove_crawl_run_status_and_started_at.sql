@@ -9,13 +9,13 @@ DROP INDEX IF EXISTS idx_crawl_runs_status;
 DROP INDEX IF EXISTS idx_crawl_runs_source_started_at;
 
 ALTER TABLE crawl_runs
-    DROP COLUMN IF EXISTS status,
-    DROP COLUMN IF EXISTS started_at;
+DROP COLUMN IF EXISTS status,
+DROP COLUMN IF EXISTS started_at;
 
 DROP TYPE IF EXISTS crawl_run_status_enum;
 
 CREATE INDEX IF NOT EXISTS idx_crawl_runs_source_created_at
-    ON crawl_runs (source_id, created_at DESC);
+ON crawl_runs (source_id, created_at DESC);
 
 COMMIT;
 

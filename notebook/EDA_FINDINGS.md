@@ -4,13 +4,13 @@ Dataset snapshot: latest 180 source batches retrieved on 2026-08-09.
 
 ## Dataset outputs
 
-| Dataset | Rows | Columns | Purpose |
-|---|---:|---:|---|
-| `data/suumo_parser_records_raw.csv` | 17,927 | 57 | Raw parser cache with English column names |
-| `data/suumo_parser_records_clean.csv` | 17,927 | 132 | Full cleaned history with raw + derived fields |
-| `data/suumo_rentals_current.csv` | 17,380 | 132 | Latest record per SUUMO property code |
-| `data/suumo_station_access.csv` | 53,044 | 12 | Station-access history, one row per access route |
-| `data/suumo_station_access_current.csv` | 51,415 | 12 | Station access for current listings only |
+| Dataset                                 |   Rows | Columns | Purpose                                          |
+| --------------------------------------- | -----: | ------: | ------------------------------------------------ |
+| `data/suumo_parser_records_raw.csv`     | 17,927 |      57 | Raw parser cache with English column names       |
+| `data/suumo_parser_records_clean.csv`   | 17,927 |     132 | Full cleaned history with raw + derived fields   |
+| `data/suumo_rentals_current.csv`        | 17,380 |     132 | Latest record per SUUMO property code            |
+| `data/suumo_station_access.csv`         | 53,044 |      12 | Station-access history, one row per access route |
+| `data/suumo_station_access_current.csv` | 51,415 |      12 | Station access for current listings only         |
 
 No raw row was deleted. The current dataset is a separate deduplicated view.
 
@@ -49,14 +49,14 @@ Sentinels are handled per field; they are not globally converted to either zero 
 
 ### Numeric summary
 
-| Field | p25 | Median | p75 | p99 | Max |
-|---|---:|---:|---:|---:|---:|
-| Rent (JPY) | 68,000 | 79,000 | 110,000 | 210,000 | 950,000 |
-| Management fee (JPY) | 6,500 | 8,000 | 10,000 | 20,000 | 100,000 |
-| Exclusive area (m²) | 22.33 | 25.67 | 34.71 | 79.38 | 311.44 |
-| Building age (years) | 0 | 7 | 21 | 53 | 99+ |
-| Base monthly cost (rent + management) | 75,000 | 87,000 | 119,000 | 229,210 | 995,000 |
-| Primary station total travel (minutes) | 5 | 7 | 9 | 16 | 74 |
+| Field                                  |    p25 | Median |     p75 |     p99 |     Max |
+| -------------------------------------- | -----: | -----: | ------: | ------: | ------: |
+| Rent (JPY)                             | 68,000 | 79,000 | 110,000 | 210,000 | 950,000 |
+| Management fee (JPY)                   |  6,500 |  8,000 |  10,000 |  20,000 | 100,000 |
+| Exclusive area (m²)                    |  22.33 |  25.67 |   34.71 |   79.38 |  311.44 |
+| Building age (years)                   |      0 |      7 |      21 |      53 |     99+ |
+| Base monthly cost (rent + management)  | 75,000 | 87,000 | 119,000 | 229,210 | 995,000 |
+| Primary station total travel (minutes) |      5 |      7 |       9 |      16 |      74 |
 
 For bus+walk access, total travel equals bus minutes plus the final walk segment. The station table also retains `mode_minutes` and `final_walk_minutes` separately.
 

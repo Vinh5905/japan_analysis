@@ -132,7 +132,10 @@ def vpn_health_reason(
 
     for network in VPN_ROUTES:
         route_result = runner(("ip", "-4", "route", "show", network))
-        if not command_succeeded(route_result) or f"dev {interface}" not in route_result.stdout:
+        if (
+            not command_succeeded(route_result)
+            or f"dev {interface}" not in route_result.stdout
+        ):
             return False, f"route {network} does not use {interface}"
 
     return True, f"{service} is active and redirect routes use {interface}"
@@ -378,11 +381,20 @@ def main() -> int:
     from scripts.telegram_control import Host
     from scripts.crawl_dispatcher import prepare
     from scripts.docker_vpn import docker_backend
-    compose_file = args.compose_file or args.env_file.resolve().parent / "docker-compose.release.yml"
+
+    compose_file = (
+        args.compose_file
+        or args.env_file.resolve().parent / "docker-compose.release.yml"
+    )
     try:
-        run = prepare(Host(args.env_file.resolve(), compose_file.resolve(), dotenv_values), state)
+        run = prepare(
+            Host(args.env_file.resolve(), compose_file.resolve(), dotenv_values), state
+        )
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"Cannot prepare DB crawl run: {type(exc).__name__}; VPN not started", file=sys.stderr)
+        print(
+            f"Cannot prepare DB crawl run: {type(exc).__name__}; VPN not started",
+            file=sys.stderr,
+        )
         return 2
     install_context(run)
     notify_vpn_event(
@@ -390,7 +402,9 @@ def main() -> int:
         "VPN KIỂM TRA BẮT ĐẦU",
         {
             "Service": "Docker vpn" if docker_backend(dotenv_values) else args.service,
-            "Interface": "tun0 trong container" if docker_backend(dotenv_values) else args.interface,
+            "Interface": "tun0 trong container"
+            if docker_backend(dotenv_values)
+            else args.interface,
             "Mỗi cấu hình": "một lần thử, tối đa 60 giây",
             "Host": hostname,
             "Crawler": "chưa được phép chạy cho tới khi VPN khỏe",
@@ -398,14 +412,21 @@ def main() -> int:
     )
     try:
         from scripts.vpn_pool import select_vpn
+
         healthy = select_vpn(
             Host(args.env_file.resolve(), compose_file.resolve(), dotenv_values),
-            state, args.service, args.interface, notifier=notifier,
+            state,
+            args.service,
+            args.interface,
+            notifier=notifier,
         )
     except BaseException:
         state.progress("vpn_preflight_failed", status="failed")
         raise
-    state.progress("vpn_ready" if healthy else "vpn_preflight_failed", status="running" if healthy else "failed")
+    state.progress(
+        "vpn_ready" if healthy else "vpn_preflight_failed",
+        status="running" if healthy else "failed",
+    )
     return 0 if healthy else 1
 
 

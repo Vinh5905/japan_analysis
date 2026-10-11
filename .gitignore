@@ -14,6 +14,9 @@ __pycache__/
 *$py.class
 .Python
 .venv/
+.venv-format/
+node_modules/
+.cache-format/
 venv/
 env/
 .pytest_cache/
@@ -53,3 +56,6 @@ Thumbs.db
 # Docker override files
 docker-compose.override.yml
 docker-compose.*.override.yml
+
+# Local database dumps (never commit warehouse or Airflow credentials)
+pipeline/warehouse/backups/

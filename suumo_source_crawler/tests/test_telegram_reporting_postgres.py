@@ -39,15 +39,20 @@ INSERT INTO crawl_tasks VALUES (3,1,'failed'), (3,NULL,'failed'),
 """
 
 
-@unittest.skipUnless(os.environ.get("SUUMO_TELEGRAM_DB_TESTS") == "1", "Opt-in: requires running local Compose Postgres")
+@unittest.skipUnless(
+    os.environ.get("SUUMO_TELEGRAM_DB_TESTS") == "1",
+    "Opt-in: requires running local Compose Postgres",
+)
 class PostgresReportingTests(unittest.TestCase):
     def host(self, source_id=7):
         values = read_env_file(ROOT / ".env")
         values["SUUMO_SOURCE_ID"] = str(source_id)
+
         def command(args):
             args = list(args)
             args[-1] = FIXTURES + args[-1] + "; ROLLBACK;"
             return host_command(args)
+
         return Host(ROOT / ".env", ROOT / "docker-compose.yml", values, command)
 
     def test_history_latest_five_source_tie_and_html_snapshot_semantics(self):
@@ -58,7 +63,9 @@ class PostgresReportingTests(unittest.TestCase):
         # Parse failed after a successful download still counts as HTML success.
         self.assertEqual((rows[3]["html_success"], rows[3]["html_failed"]), (1, 1))
 
-    def test_total_includes_old_manual_rerun_failed_and_running_excludes_other_source(self):
+    def test_total_includes_old_manual_rerun_failed_and_running_excludes_other_source(
+        self,
+    ):
         self.assertEqual(self.host().total(), {"total_urls": 27, "runs": 6})
         self.assertEqual(self.host(9).total(), {"total_urls": 0, "runs": 0})
         self.assertEqual(self.host(9).history(), [])

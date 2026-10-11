@@ -5,14 +5,14 @@
 Bộ skill được cài theo phạm vi repository tại `.agents/skills/dct-*` để Codex
 tự tìm thấy khi mở project.
 
-| Thành phần | Giá trị đã kiểm chứng ngày 2026-09-26 |
-| --- | --- |
-| Bản dbt Charts phát hành mới nhất | `dbt-charts==0.8.0` |
-| Ngày phát hành trên PyPI | 2026-09-15 |
-| Wheel đã đối chiếu | `dbt_charts-0.8.0-py3-none-any.whl` |
-| SHA-256 của wheel | `8c502aa77bd1e13fe9eb0e8bf5f0642dac4d3409fbd308ac1236b49e46e1876c` |
-| Nguồn chính thức | `dbt-labs/dbt-charts` |
-| Giấy phép | Apache-2.0 |
+| Thành phần                        | Giá trị đã kiểm chứng ngày 2026-09-26                              |
+| --------------------------------- | ------------------------------------------------------------------ |
+| Bản dbt Charts phát hành mới nhất | `dbt-charts==0.8.0`                                                |
+| Ngày phát hành trên PyPI          | 2026-09-15                                                         |
+| Wheel đã đối chiếu                | `dbt_charts-0.8.0-py3-none-any.whl`                                |
+| SHA-256 của wheel                 | `8c502aa77bd1e13fe9eb0e8bf5f0642dac4d3409fbd308ac1236b49e46e1876c` |
+| Nguồn chính thức                  | `dbt-labs/dbt-charts`                                              |
+| Giấy phép                         | Apache-2.0                                                         |
 
 Thông báo bản quyền của bộ Charts nằm tại
 `.agents/skills/NOTICE.dbt-charts`; toàn văn Apache-2.0 dùng chung nằm tại
@@ -32,21 +32,21 @@ chuẩn của bộ skill được xác định từ artifact chính thức.
 
 ## Các skill đã cài
 
-| Skill | Dùng khi |
-| --- | --- |
-| `dct-intro` | Bắt đầu một yêu cầu dbt Charts và chọn workflow tiếp theo |
-| `dct-analyst-runbook` | Xác định câu hỏi, grain, metric và cách bàn giao phân tích |
-| `dct-data-exploration` | Khám phá source, table, column và quan hệ trước khi viết board |
-| `dct-board-design` | Chọn chart, hierarchy, layout và màu |
-| `dct-board-build` | Viết hoặc sửa board YAML, query, validate và render |
-| `dct-board-replicate` | Dựng lại dashboard từ ảnh hoặc bản export |
-| `dct-board-review` | Điều phối structural review và visual review |
-| `dct-board-structural-review` | Review YAML, data shape, variable và layout mà chưa render |
-| `dct-board-visual-review` | Review ảnh render về bố cục, độ đọc và format |
-| `dct-report-design` | Thiết kế báo cáo có narrative thay vì dashboard theo dõi |
-| `dct-troubleshooting` | Sửa lỗi validate, SQL, query, render và variable |
-| `dct-cloud-setup` | Thiết lập dbt Charts Cloud khi người dùng yêu cầu deploy |
-| `dct-mcp-setup` | Thiết lập MCP server khi project quyết định dùng MCP |
+| Skill                         | Dùng khi                                                       |
+| ----------------------------- | -------------------------------------------------------------- |
+| `dct-intro`                   | Bắt đầu một yêu cầu dbt Charts và chọn workflow tiếp theo      |
+| `dct-analyst-runbook`         | Xác định câu hỏi, grain, metric và cách bàn giao phân tích     |
+| `dct-data-exploration`        | Khám phá source, table, column và quan hệ trước khi viết board |
+| `dct-board-design`            | Chọn chart, hierarchy, layout và màu                           |
+| `dct-board-build`             | Viết hoặc sửa board YAML, query, validate và render            |
+| `dct-board-replicate`         | Dựng lại dashboard từ ảnh hoặc bản export                      |
+| `dct-board-review`            | Điều phối structural review và visual review                   |
+| `dct-board-structural-review` | Review YAML, data shape, variable và layout mà chưa render     |
+| `dct-board-visual-review`     | Review ảnh render về bố cục, độ đọc và format                  |
+| `dct-report-design`           | Thiết kế báo cáo có narrative thay vì dashboard theo dõi       |
+| `dct-troubleshooting`         | Sửa lỗi validate, SQL, query, render và variable               |
+| `dct-cloud-setup`             | Thiết lập dbt Charts Cloud khi người dùng yêu cầu deploy       |
+| `dct-mcp-setup`               | Thiết lập MCP server khi project quyết định dùng MCP           |
 
 Workflow mặc định cho dashboard mới:
 

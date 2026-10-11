@@ -108,14 +108,14 @@ systemctl enable --now suumo-crawler-pipeline.timer
 
 ## Thay đổi nào cần image mới?
 
-| Thay đổi | Cách cập nhật |
-| --- | --- |
-| Spider/parser/settings, dependencies, Dockerfile.release, wrapper, bootstrap, SQL | Build/push tag mới rồi deploy tag đó |
-| Runner/preflight/Compose/service | Deploy bundle mới; có thể tái dùng tag image hiện tại nếu source trong image không thay đổi |
-| Telegram helper | Dùng cả trên host và trong image: build/push tag mới rồi deploy |
-| Timer | Deploy với `--update-timer` |
-| Giá trị cấu hình đã được hỗ trợ | Sửa `.env` trên VPS; crawler tạo container mới sẽ đọc lại |
-| SQL migration cho DB hiện có | Build image chứa migration, deploy, rồi chạy migration riêng có chủ đích |
+| Thay đổi                                                                          | Cách cập nhật                                                                               |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Spider/parser/settings, dependencies, Dockerfile.release, wrapper, bootstrap, SQL | Build/push tag mới rồi deploy tag đó                                                        |
+| Runner/preflight/Compose/service                                                  | Deploy bundle mới; có thể tái dùng tag image hiện tại nếu source trong image không thay đổi |
+| Telegram helper                                                                   | Dùng cả trên host và trong image: build/push tag mới rồi deploy                             |
+| Timer                                                                             | Deploy với `--update-timer`                                                                 |
+| Giá trị cấu hình đã được hỗ trợ                                                   | Sửa `.env` trên VPS; crawler tạo container mới sẽ đọc lại                                   |
+| SQL migration cho DB hiện có                                                      | Build image chứa migration, deploy, rồi chạy migration riêng có chủ đích                    |
 
 Bootstrap mặc định không nâng cấp schema hiện có. Không dùng reset DB để cập nhật code. Đổi mật khẩu PostgreSQL trong `.env` cũng không tự đổi mật khẩu role đã tồn tại. Giữ ổn định Compose project name và đường dẫn dữ liệu trong các lần deploy.
 
